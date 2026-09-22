@@ -29,18 +29,24 @@ function writeAuth(agentDir: string, managementKey = "napi_test", orgId = "org-t
 	);
 }
 
-type Handler = (event: unknown, ctx: { ui: { notify: (message: string, level: string) => void } }) => Promise<unknown>;
+type Handler = (event: unknown, ctx: { ui: { notify: (message: string, level: string) => void; setStatus: (key: string, value: string) => void } }) => Promise<unknown>;
 
-function registerAndGetHandler(): Handler {
-	let handler: Handler | undefined;
+function registerHandlers(): { beforeAgentStart: Handler; sessionStart: Handler } {
+	let beforeAgentStart: Handler | undefined;
+	let sessionStart: Handler | undefined;
 	const pi = {
-		on(_event: string, callback: Handler) {
-			handler = callback;
+		on(event: string, callback: Handler) {
+			if (event === "before_agent_start") beforeAgentStart = callback;
+			if (event === "session_start") sessionStart = callback;
 		},
 	};
 	registerNeonAlertHooks(pi as never);
-	if (!handler) throw new Error("before_agent_start handler was not registered");
-	return handler;
+	if (!beforeAgentStart || !sessionStart) throw new Error("alert handlers were not registered");
+	return { beforeAgentStart, sessionStart };
+}
+
+function registerAndGetHandler(): Handler {
+	return registerHandlers().beforeAgentStart;
 }
 
 describe("Neon spending cap alerts", () => {
@@ -48,6 +54,7 @@ describe("Neon spending cap alerts", () => {
 	let originalFetch: typeof globalThis.fetch;
 	let fetchCalls: string[];
 	let notifications: string[];
+	let statuses: [string, string][];
 
 	beforeEach(() => {
 		agentDir = mkdtempSync(join(tmpdir(), "pi-neon-alerts-"));
@@ -56,6 +63,7 @@ describe("Neon spending cap alerts", () => {
 		originalFetch = globalThis.fetch;
 		fetchCalls = [];
 		notifications = [];
+		statuses = [];
 		globalThis.fetch = (async (input: RequestInfo | URL) => {
 			const url = typeof input === "string" ? input : input.toString();
 			fetchCalls.push(url);
@@ -70,7 +78,10 @@ describe("Neon spending cap alerts", () => {
 	});
 
 	async function run(handler: Handler): Promise<void> {
-		await handler({}, { ui: { notify: (message) => notifications.push(message) } });
+		await handler({}, { ui: {
+			notify: (message) => notifications.push(message),
+			setStatus: (key, value) => statuses.push([key, value]),
+		} });
 	}
 
 	it("fires each threshold only once per session", async () => {
@@ -118,12 +129,53 @@ describe("Neon spending cap alerts", () => {
 		const handler = registerAndGetHandler();
 		await run(handler);
 		await run(handler);
-		expect(fetchCalls).toHaveLength(1);
+		expect(fetchCalls).toHaveLength(2);
 	});
 
 	it("identifies alerts as local or this-machine spend", async () => {
 		writeSpend(agentDir, 8000);
 		await run(registerAndGetHandler());
 		expect(notifications.every((message) => message.includes("this machine") || message.includes("local spend"))).toBe(true);
+	});
+
+	it("publishes cap and local spend percentage", async () => {
+		writeSpend(agentDir, 32);
+		await run(registerAndGetHandler());
+		expect(statuses).toContainEqual(["neon-cap", "$100.00 · 32%"]);
+	});
+
+	it("publishes zero percent when local spend is zero", async () => {
+		await run(registerAndGetHandler());
+		expect(statuses).toContainEqual(["neon-cap", "$100.00 · 0%"]);
+	});
+
+	it("publishes no cap when the cap is null", async () => {
+		globalThis.fetch = (async () => new Response(JSON.stringify({ spending_limit_cents: null }), { status: 200 })) as typeof fetch;
+		await run(registerAndGetHandler());
+		expect(statuses).toContainEqual(["neon-cap", "no cap"]);
+	});
+
+	it("clamps over-cap local spend to 100 percent", async () => {
+		writeSpend(agentDir, 15000);
+		await run(registerAndGetHandler());
+		expect(statuses).toContainEqual(["neon-cap", "$100.00 · 100%"]);
+	});
+
+	it("does not publish status when management key is missing", async () => {
+		writeAuth(agentDir, "", "org-test");
+		await run(registerAndGetHandler());
+		expect(statuses).toHaveLength(0);
+	});
+
+	it("does not publish status when cap fetch errors", async () => {
+		globalThis.fetch = (async () => { throw new Error("network failure"); }) as typeof fetch;
+		await run(registerAndGetHandler());
+		expect(statuses).toHaveLength(0);
+	});
+
+	it("publishes status from session_start", async () => {
+		const handlers = registerHandlers();
+		await run(handlers.sessionStart);
+		expect(statuses).toContainEqual(["neon-cap", "$100.00 · 0%"]);
 	});
 });
