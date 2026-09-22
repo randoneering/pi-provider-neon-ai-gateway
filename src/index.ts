@@ -10,13 +10,14 @@
  *
  * Then pick a model with `/model`.
  *
- * `/neon-balance` (see `./account.ts`) is optional and reads a separate
- * Neon management API key (napi_...) to display the org spending cap and
- * this machine's local session spend.
+ * `/neon-balance` and `/neon-spending-limit` (see `./account.ts`) and the
+ * cap-threshold `before_agent_start` hook (see `./alerts.ts`) read a
+ * separate Neon management API key (napi_...) to display the org spending
+ * cap, this machine's local session spend, and cap-threshold warnings.
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { registerNeonAccountCommands } from "./account.js";
+import { registerNeonAccountCommands, registerNeonSpendingLimitCommand } from "./account.js";
 import { registerNeonAlertHooks } from "./alerts.js";
 import { registerNeonAuthCommands } from "./auth.js";
 import { NEON_AI_GATEWAY_BASE_URL_ENV, NEON_AI_GATEWAY_TOKEN_ENV } from "./config.js";
@@ -37,4 +38,5 @@ export default function (pi: ExtensionAPI): void {
 	registerNeonAuthCommands(pi);
 	registerNeonAccountCommands(pi);
 	registerNeonAlertHooks(pi);
+	registerNeonSpendingLimitCommand(pi);
 }
