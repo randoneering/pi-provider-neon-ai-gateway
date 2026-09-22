@@ -3,10 +3,19 @@
  *
  * `NEON_AI_GATEWAY_TOKEN` holds the gateway token and
  * `NEON_AI_GATEWAY_BASE_URL` holds the branch endpoint.
+ * `NEON_API_KEY` holds a separate Neon management API key used only for
+ * /neon-balance lookups against the public console API.
  */
 
 export const NEON_AI_GATEWAY_TOKEN_ENV = "NEON_AI_GATEWAY_TOKEN";
 export const NEON_AI_GATEWAY_BASE_URL_ENV = "NEON_AI_GATEWAY_BASE_URL";
+export const NEON_API_KEY_ENV = "NEON_API_KEY";
+
+/**
+ * Base URL for the public Neon management API. Used by /neon-balance to
+ * resolve the org spending limit and (on first run) the user's org id.
+ */
+export const NEON_API_BASE_URL = "https://console.neon.tech/api/v2";
 
 /**
  * Normalize a user-supplied Neon branch base URL.
@@ -51,4 +60,23 @@ export function resolveNeonBaseUrl(options: ResolveOptions = {}): string | undef
 	if (!raw) return undefined;
 	const normalized = normalizeNeonBaseUrl(raw);
 	return `${normalized}/v1`;
+}
+
+export interface ResolveManagementKeyOptions {
+	processEnv?: Record<string, string | undefined>;
+	storedManagementKey?: string;
+}
+
+/**
+ * Resolve the Neon management API key.
+ *
+ * Precedence: stored credential (from auth.json) over process environment.
+ * Whitespace-only and empty values are treated as missing so the caller
+ * can fall through to the next source without extra checks.
+ */
+export function resolveNeonManagementKey(options: ResolveManagementKeyOptions = {}): string | undefined {
+	const fromStored = options.storedManagementKey?.trim();
+	if (fromStored) return fromStored;
+	const fromProcess = options.processEnv?.[NEON_API_KEY_ENV]?.trim();
+	return fromProcess || undefined;
 }

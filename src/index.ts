@@ -9,9 +9,14 @@
  *    plus a base URL override to `auth.json`.
  *
  * Then pick a model with `/model`.
+ *
+ * `/neon-balance` (see `./account.ts`) is optional and reads a separate
+ * Neon management API key (napi_...) to display the org spending cap and
+ * this machine's local session spend.
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { registerNeonAccountCommands } from "./account.js";
 import { registerNeonAuthCommands } from "./auth.js";
 import { NEON_AI_GATEWAY_BASE_URL_ENV, NEON_AI_GATEWAY_TOKEN_ENV } from "./config.js";
 import { NEON_MODELS } from "./models.js";
@@ -29,4 +34,5 @@ export default function (pi: ExtensionAPI): void {
 	});
 
 	registerNeonAuthCommands(pi);
+	registerNeonAccountCommands(pi);
 }
