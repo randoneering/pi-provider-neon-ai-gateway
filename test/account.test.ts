@@ -543,3 +543,71 @@ describe("/neon-spending-limit command output", () => {
 		]);
 	});
 });
+
+describe("/neon-spending-limit set/clear", () => {
+	let tempDir: string;
+	let originalFetch: typeof globalThis.fetch;
+	let notifications: { message: string; level: string }[];
+	beforeEach(() => {
+		tempDir = mkdtempSync(join(tmpdir(), "pi-neon-limit-mutate-"));
+		setAgentDir(tempDir);
+		originalFetch = globalThis.fetch;
+		notifications = [];
+		writeFileSync(join(tempDir, "auth.json"), JSON.stringify({ neon: { type: "api_key", key: "nt_live_test", managementKey: "napi_test", orgId: "org-test-1" } }));
+	});
+	afterEach(() => { unsetAgentDir(); rmSync(tempDir, { recursive: true, force: true }); globalThis.fetch = originalFetch; });
+	function handler(): (args: string, ctx: unknown) => Promise<void> {
+		const pi = { _handler: undefined as ((args: string, ctx: unknown) => Promise<void>) | undefined, registerCommand(_n: string, o: { handler: (a: string, c: unknown) => Promise<void> }) { this._handler = o.handler; } };
+		accountModule.registerNeonSpendingLimitCommand(pi as never);
+		return pi._handler!;
+	}
+	const ctx = () => ({ ui: { notify: (message: string, level: string) => notifications.push({ message, level }) } });
+	it("sets the cap with a PUT body, treating input as dollars", async () => {
+		let request: RequestInit | undefined;
+		globalThis.fetch = (async (_url, init) => { request = init; return new Response(JSON.stringify({ spending_limit_cents: 5000 }), { status: 200 }); }) as typeof fetch;
+		await handler()("set 50", ctx());
+		expect(request?.method).toBe("PUT");
+		expect(JSON.parse(String(request?.body))).toEqual({ spending_limit_cents: 5000 });
+		expect(notifications[0]?.message).toContain("$50.00");
+	});
+	it("converts fractional dollar input to cents", async () => {
+		let request: RequestInit | undefined;
+		globalThis.fetch = (async (_url, init) => { request = init; return new Response(JSON.stringify({ spending_limit_cents: 4999 }), { status: 200 }); }) as typeof fetch;
+		await handler()("set 49.99", ctx());
+		expect(JSON.parse(String(request?.body))).toEqual({ spending_limit_cents: 4999 });
+		expect(notifications[0]?.message).toContain("$49.99");
+	});
+	it("rejects invalid amounts without calling the API", async () => {
+		let calls = 0;
+		globalThis.fetch = (async () => { calls++; return new Response(); }) as typeof fetch;
+		for (const value of ["0", "0.00", "-100", "-1.50", "notanumber", "50.123", "1e2"]) { await handler()(`set ${value}`, ctx()); }
+		expect(calls).toBe(0);
+		expect(notifications.every(n => n.message.startsWith("Invalid amount."))).toBe(true);
+	});
+	it("deletes the cap", async () => {
+		let request: RequestInit | undefined;
+		globalThis.fetch = (async (_url, init) => { request = init; return new Response(null, { status: 204 }); }) as typeof fetch;
+		await handler()("clear", ctx());
+		expect(request?.method).toBe("DELETE");
+		expect(notifications[0]?.message).toBe("Neon spending limit cleared.");
+	});
+	it("renders the admin-key error for 403", async () => {
+		globalThis.fetch = (async () => new Response(JSON.stringify({ message: "forbidden" }), { status: 403 })) as typeof fetch;
+		await handler()("set 50", ctx());
+		expect(notifications[0]?.level).toBe("error");
+		expect(notifications[0]?.message).toContain("organization admin API key");
+		expect(notifications[0]?.message).toContain("auth.json");
+	});
+	it("shows help for an unknown subcommand", async () => {
+		let calls = 0;
+		globalThis.fetch = (async () => { calls++; return new Response(); }) as typeof fetch;
+		await handler()("foo", ctx());
+		expect(calls).toBe(0);
+		expect(notifications[0]?.message).toContain("Usage:");
+	});
+	it("shows the missing-key warning", async () => {
+		writeFileSync(join(tempDir, "auth.json"), JSON.stringify({ neon: { type: "api_key", orgId: "org-test-1" } }));
+		await handler()("clear", ctx());
+		expect(notifications[0]?.message).toContain("no management key configured");
+	});
+});

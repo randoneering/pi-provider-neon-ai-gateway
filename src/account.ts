@@ -193,14 +193,61 @@ export async function fetchSpendingLimit(orgId: string, apiKey: string): Promise
 	return parseSpendingLimit(parsed);
 }
 
-async function managementApiFetch(path: string, apiKey: string): Promise<Response> {
+async function responseError(response: Response): Promise<Error> {
+	let detail = "";
+	try {
+		const body: unknown = await response.clone().json();
+		if (isRecord(body)) {
+			const nested = body.error;
+			if (typeof body.message === "string") detail = body.message;
+			else if (typeof nested === "string") detail = nested;
+			else if (isRecord(nested) && typeof nested.message === "string") detail = nested.message;
+		}
+	} catch {
+		try {
+			detail = (await response.clone().text()).trim();
+		} catch {
+			// Keep the status-only message.
+		}
+	}
+	return new Error(`Neon management API returned status ${response.status}${detail ? `: ${detail}` : ""}`);
+}
+
+export async function setSpendingLimit(orgId: string, cents: number, apiKey: string): Promise<number> {
+	const response = await managementApiFetch(`/organizations/${orgId}/billing/spending_limit`, apiKey, {
+		method: "PUT",
+		body: JSON.stringify({ spending_limit_cents: cents }),
+	});
+	if (!response.ok) throw await responseError(response);
+	const parsed: unknown = await response.json();
+	const amount = parseSpendingLimit(parsed);
+	if (amount === null) throw new Error("Neon management API returned no spending limit after update");
+	return amount;
+}
+
+export async function deleteSpendingLimit(orgId: string, apiKey: string): Promise<void> {
+	const response = await managementApiFetch(`/organizations/${orgId}/billing/spending_limit`, apiKey, {
+		method: "DELETE",
+	});
+	if (!response.ok) throw await responseError(response);
+}
+
+async function managementApiFetch(
+	path: string,
+	apiKey: string,
+	init: RequestInit = {},
+): Promise<Response> {
+
 	const controller = new AbortController();
 	const timer = setTimeout(() => controller.abort(), MANAGEMENT_API_TIMEOUT_MS);
 	try {
 		return await fetch(`${NEON_API_BASE_URL}${path}`, {
+			...init,
 			headers: {
 				Authorization: `Bearer ${apiKey}`,
 				Accept: "application/json",
+				...(init.body ? { "Content-Type": "application/json" } : {}),
+				...init.headers,
 			},
 			signal: controller.signal,
 		});
@@ -262,8 +309,42 @@ async function persistOrgId(orgId: string): Promise<void> {
 
 export function registerNeonSpendingLimitCommand(pi: ExtensionAPI): void {
 	pi.registerCommand("neon-spending-limit", {
-		description: "Show the Neon organization spending cap",
-		handler: async (_args, ctx) => {
+		description: "Show or change the Neon organization spending cap",
+		handler: async (args, ctx) => {
+			const command = args.trim().toLowerCase();
+			const setMatch = command.match(/^set\s+(\S+)$/);
+			const isClear = command === "clear" || command === "delete" || command === "remove";
+			const isShow = command === "" || command === "show";
+			if (!isShow && !setMatch && !isClear) {
+				ctx.ui.notify(
+					"Usage: /neon-spending-limit [show | set <dollars> | clear]\nExample: set 50 for $50.00, set 49.99 for $49.99.",
+					"warning",
+				);
+				return;
+			}
+			let requestedCents: number | undefined;
+			if (setMatch) {
+				const rawDollars = setMatch[1]!;
+				// Accept whole dollars or up to 2 decimal places.
+				if (!/^\d+(\.\d{1,2})?$/.test(rawDollars)) {
+					ctx.ui.notify(
+						"Invalid amount. Use a positive number of dollars, e.g. /neon-spending-limit set 50 for $50.00 or 49.99 for $49.99.",
+						"warning",
+					);
+					return;
+				}
+				const dollars = Number.parseFloat(rawDollars);
+				const cents = Math.round(dollars * 100);
+				if (!Number.isSafeInteger(cents) || cents < 1) {
+					ctx.ui.notify(
+						"Invalid amount. Use a positive number of dollars, e.g. /neon-spending-limit set 50 for $50.00 or 49.99 for $49.99.",
+						"warning",
+					);
+					return;
+				}
+				requestedCents = cents;
+			}
+
 			const stored = await readStoredNeonCredential();
 			const managementKey = resolveNeonManagementKey({
 				processEnv: process.env as Record<string, string | undefined>,
@@ -286,6 +367,42 @@ export function registerNeonSpendingLimitCommand(pi: ExtensionAPI): void {
 					orgId = org.id;
 					orgDisplay = `${org.name} (${org.id})`;
 					await persistOrgId(org.id);
+				}
+				if (requestedCents !== undefined) {
+					try {
+						const cap = await setSpendingLimit(orgId, requestedCents, managementKey);
+						ctx.ui.notify(`Neon spending limit set to ${formatUsd(cap)}.\nOrg: ${orgDisplay ?? orgId}`, "info");
+					} catch (error) {
+						const message = (error as Error).message;
+						if (/status (401|403)\b/.test(message)) {
+							const source = stored.managementKey ? "auth.json" : "NEON_API_KEY env";
+							ctx.ui.notify(
+								`Neon rejected the change: ${message}. The /neon-spending-limit set/clear commands require an organization admin API key. Re-run /neon-login with an admin napi_... key. Your current key is from ${source}.`,
+								"error",
+							);
+						} else {
+							ctx.ui.notify(`Neon spending limit unavailable: ${message}`, "warning");
+						}
+					}
+					return;
+				}
+				if (isClear) {
+					try {
+						await deleteSpendingLimit(orgId, managementKey);
+						ctx.ui.notify("Neon spending limit cleared.", "info");
+					} catch (error) {
+						const message = (error as Error).message;
+						if (/status (401|403)\b/.test(message)) {
+							const source = stored.managementKey ? "auth.json" : "NEON_API_KEY env";
+							ctx.ui.notify(
+								`Neon rejected the change: ${message}. The /neon-spending-limit set/clear commands require an organization admin API key. Re-run /neon-login with an admin napi_... key. Your current key is from ${source}.`,
+								"error",
+							);
+						} else {
+							ctx.ui.notify(`Neon spending limit unavailable: ${message}`, "warning");
+						}
+					}
+					return;
 				}
 				const cap = await fetchSpendingLimit(orgId, managementKey);
 				const limit = cap === null ? "(none configured)" : formatUsd(cap);
