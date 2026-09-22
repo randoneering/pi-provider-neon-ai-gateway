@@ -168,6 +168,26 @@ export function parseUserOrganizations(value: unknown): ParsedOrg | undefined {
 	return undefined;
 }
 
+export interface AiGatewayCreditBalance {
+	balanceCents: number;
+	asOf: string;
+}
+
+export function parseAiGatewayCreditBalance(value: unknown): AiGatewayCreditBalance | null {
+	if (!isRecord(value)) return null;
+	const cents = value.balance_cents;
+	if (typeof cents !== "number" || !Number.isFinite(cents) || cents < 0) return null;
+	const asOf = value.as_of;
+	if (typeof asOf !== "string" || asOf.length === 0) return null;
+	return { balanceCents: cents, asOf };
+}
+
+function formatAsOfUtc(asOf: string): string {
+	const date = new Date(asOf);
+	if (Number.isNaN(date.getTime())) return asOf;
+	return `${date.toISOString().slice(0, 10)} ${date.toISOString().slice(11, 16)} UTC`;
+}
+
 /**
  * Fetch the user's first organization via the public Neon management API.
  * The endpoint returns a single org when called with an org-/project-scoped
@@ -191,6 +211,19 @@ export async function fetchSpendingLimit(orgId: string, apiKey: string): Promise
 	const response = await managementApiFetch(`/organizations/${orgId}/billing/spending_limit`, apiKey);
 	const parsed: unknown = await response.json();
 	return parseSpendingLimit(parsed);
+}
+
+export async function fetchAiGatewayCreditBalance(
+	orgId: string,
+	apiKey: string,
+): Promise<AiGatewayCreditBalance | null> {
+	try {
+		const response = await managementApiFetch(`/organizations/${orgId}/billing/aigw_credits/balance`, apiKey);
+		if (!response.ok) return null;
+		return parseAiGatewayCreditBalance(await response.json());
+	} catch {
+		return null;
+	}
 }
 
 async function responseError(response: Response): Promise<Error> {
@@ -451,17 +484,22 @@ export function registerNeonAccountCommands(pi: ExtensionAPI): void {
 					orgDisplay = orgId;
 				}
 				const cap = await fetchSpendingLimit(orgId, managementKey);
+				const balance = await fetchAiGatewayCreditBalance(orgId, managementKey);
 				const local = await aggregateLocalSpend(getAgentDir());
 
 				const lines: string[] = ["Neon account balance:"];
 				const row = (label: string, value: string) =>
 					`  ${label.padEnd(15, " ")}${value}`;
 				lines.push(row("Org:", orgDisplay));
-				if (cap === null) {
-					lines.push(row("Spending cap:", "(none configured)"));
-				} else {
-					lines.push(row("Spending cap:", formatUsd(cap)));
-				}
+				lines.push(row("Spending cap:", cap === null ? "(none configured)" : formatUsd(cap)));
+				lines.push(
+					row(
+						"Balance:",
+						balance === null
+							? "(no balance)"
+							: `${formatUsd(balance.balanceCents / 100)} (as of ${formatAsOfUtc(balance.asOf)})`,
+					),
+				);
 				if (local.sessionCount === 0) {
 					lines.push(row("Local spend:", "$0.00 (no completed Neon sessions on this machine)"));
 				} else {
@@ -472,12 +510,12 @@ export function registerNeonAccountCommands(pi: ExtensionAPI): void {
 							`${formatUsd(local.totalCost)} across ${local.sessionCount} session${local.sessionCount === 1 ? "" : "s"} (since ${since})`,
 						),
 					);
-					if (cap !== null) {
-						const headroom = Math.max(0, cap - local.totalCost);
-						lines.push(row("Headroom:", `${formatUsd(headroom)} (cap − local spend, this machine only)`));
+					const bindingLimit = cap ?? (balance === null ? undefined : balance.balanceCents / 100);
+					if (bindingLimit !== undefined) {
+						const headroom = Math.max(0, bindingLimit - local.totalCost);
+						lines.push(row("Headroom:", `${formatUsd(headroom)} (binding limit − local spend, this machine only)`));
 					}
 				}
-				lines.push(row("Balance:", "Not exposed by the Neon API. Visible in the Neon Console."));
 				lines.push(row("Note:", "Local spend ignores other machines and any Neon DB charges."));
 
 				ctx.ui.notify(lines.join("\n"), "info");
