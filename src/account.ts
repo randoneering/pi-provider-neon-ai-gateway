@@ -297,27 +297,31 @@ export function registerNeonAccountCommands(pi: ExtensionAPI): void {
 				const local = await aggregateLocalSpend(getAgentDir());
 
 				const lines: string[] = ["Neon account balance:"];
-				lines.push(`  Org:          ${orgDisplay}`);
+				const row = (label: string, value: string) =>
+					`  ${label.padEnd(15, " ")}${value}`;
+				lines.push(row("Org:", orgDisplay));
 				if (cap === null) {
-					lines.push("  Spending cap: (none configured)");
+					lines.push(row("Spending cap:", "(none configured)"));
 				} else {
-					lines.push(`  Spending cap: ${formatUsd(cap)}`);
+					lines.push(row("Spending cap:", formatUsd(cap)));
 				}
 				if (local.sessionCount === 0) {
-					lines.push("  Local spend:  $0.00 (no completed Neon sessions on this machine)");
+					lines.push(row("Local spend:", "$0.00 (no completed Neon sessions on this machine)"));
 				} else {
 					const since = local.firstTimestamp ? formatMonthYear(local.firstTimestamp) : "unknown";
 					lines.push(
-						`  Local spend:  ${formatUsd(local.totalCost)} across ${local.sessionCount} session${local.sessionCount === 1 ? "" : "s"} (since ${since})`,
+						row(
+							"Local spend:",
+							`${formatUsd(local.totalCost)} across ${local.sessionCount} session${local.sessionCount === 1 ? "" : "s"} (since ${since})`,
+						),
 					);
 					if (cap !== null) {
-						const remaining = Math.max(0, cap - local.totalCost);
-						lines.push(`  Remaining:    ${formatUsd(remaining)} (against cap)`);
+						const headroom = Math.max(0, cap - local.totalCost);
+						lines.push(row("Headroom:", `${formatUsd(headroom)} (cap − local spend, this machine only)`));
 					}
 				}
-				lines.push(
-					"  Note:         Real prepaid balance is only visible in the Neon Console.",
-				);
+				lines.push(row("Balance:", "Not exposed by the Neon API. Visible in the Neon Console."));
+				lines.push(row("Note:", "Local spend ignores other machines and any Neon DB charges."));
 
 				ctx.ui.notify(lines.join("\n"), "info");
 			} catch (error) {

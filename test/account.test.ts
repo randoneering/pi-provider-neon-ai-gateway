@@ -259,3 +259,153 @@ describe("integration with readAuthFile", () => {
 		expect(stored.gatewayBaseUrl).toBeUndefined();
 	});
 });
+
+describe("/neon-balance command output", () => {
+	let tempDir: string;
+	let originalFetch: typeof globalThis.fetch;
+	let fetchCalls: { url: string; init?: RequestInit }[];
+
+	beforeEach(() => {
+		tempDir = mkdtempSync(join(tmpdir(), "pi-neon-cmd-"));
+		setAgentDir(tempDir);
+		originalFetch = globalThis.fetch;
+		fetchCalls = [];
+		globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+			const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+			fetchCalls.push({ url, init });
+			return new Response(JSON.stringify({ spending_limit_cents: 5000 }), {
+				status: 200,
+				headers: { "content-type": "application/json" },
+			});
+		}) as typeof globalThis.fetch;
+	});
+
+	afterEach(() => {
+		unsetAgentDir();
+		rmSync(tempDir, { recursive: true, force: true });
+		globalThis.fetch = originalFetch;
+	});
+
+	it("renders the honest wording with cap, headroom, and explicit 'no balance' line", async () => {
+		const authPath = join(tempDir, "auth.json");
+		writeFileSync(
+			authPath,
+			JSON.stringify({
+				neon: {
+					type: "api_key",
+					key: "nt_live_test",
+					env: { NEON_AI_GATEWAY_BASE_URL: "https://br-x.ai.neon.tech" },
+					managementKey: "napi_test",
+					orgId: "org-test-1",
+				},
+			}),
+		);
+
+		// One local Neon session so we exercise the full line set.
+		const sessionsDir = join(tempDir, "sessions", "proj-a");
+		mkdirSync(sessionsDir, { recursive: true });
+		const sample = JSON.stringify({
+			type: "message",
+			message: {
+				role: "assistant",
+				content: [],
+				api: "openai-completions",
+				provider: "neon",
+				model: "gpt-5-mini",
+				timestamp: Date.UTC(2026, 8, 1),
+				usage: {
+					input: 100,
+					output: 50,
+					cacheRead: 0,
+					cacheWrite: 0,
+					totalTokens: 150,
+					cost: { input: 0.1, output: 0.13, cacheRead: 0, cacheWrite: 0, total: 0.23 },
+				},
+				stopReason: "stop",
+			},
+		});
+		writeFileSync(join(sessionsDir, "s1.jsonl"), sample);
+
+		const notifications: { message: string; level: string }[] = [];
+		const fakePi = {
+			registerCommand(_name: string, options: { handler: (args: string, ctx: unknown) => Promise<void> }) {
+				void _name;
+				this._handler = options.handler;
+			},
+			_handler: undefined as ((args: string, ctx: unknown) => Promise<void>) | undefined,
+		};
+		const fakeCtx = {
+			ui: {
+				notify(message: string, level: string) {
+					notifications.push({ message, level });
+				},
+			},
+		};
+
+		accountModule.registerNeonAccountCommands(fakePi as never);
+		expect(fakePi._handler).toBeTypeOf("function");
+		await fakePi._handler!("", fakeCtx);
+
+		expect(notifications).toHaveLength(1);
+		const text = notifications[0]!.message;
+		expect(text).toContain("Neon account balance:");
+		expect(text).toMatch(/Spending cap:\s+\$50\.00/);
+		expect(text).toMatch(/Local spend:\s+\$0\.23/);
+		expect(text).toMatch(/Headroom:\s+\$49\.77/);
+		expect(text).toContain("(cap − local spend, this machine only)");
+		expect(text).toMatch(/Balance:\s+Not exposed by the Neon API\./);
+		expect(text).toMatch(/Note:\s+Local spend ignores other machines/);
+		// Negative regression: we must NOT claim we know the real balance.
+		expect(text).not.toMatch(/Remaining:\s+\$/);
+		expect(text).not.toMatch(/^  Balance:\s+\$/m);
+		expect(fetchCalls).toHaveLength(1);
+		expect(fetchCalls[0]!.url).toContain("/organizations/org-test-1/billing/spending_limit");
+	});
+
+	it("renders '(none configured)' when spending_limit_cents is null", async () => {
+		const authPath = join(tempDir, "auth.json");
+		writeFileSync(
+			authPath,
+			JSON.stringify({
+				neon: {
+					type: "api_key",
+					key: "nt_live_test",
+					env: { NEON_AI_GATEWAY_BASE_URL: "https://br-x.ai.neon.tech" },
+					managementKey: "napi_test",
+					orgId: "org-test-1",
+				},
+			}),
+		);
+
+		globalThis.fetch = (async () =>
+			new Response(JSON.stringify({ spending_limit_cents: null }), {
+				status: 200,
+				headers: { "content-type": "application/json" },
+			})) as typeof globalThis.fetch;
+
+		const notifications: { message: string; level: string }[] = [];
+		const fakePi = {
+			_handler: undefined as ((args: string, ctx: unknown) => Promise<void>) | undefined,
+			registerCommand(_name: string, options: { handler: (args: string, ctx: unknown) => Promise<void> }) {
+				void _name;
+				this._handler = options.handler;
+			},
+		};
+		const fakeCtx = {
+			ui: {
+				notify(message: string, level: string) {
+					notifications.push({ message, level });
+				},
+			},
+		};
+
+		accountModule.registerNeonAccountCommands(fakePi as never);
+		await fakePi._handler!("", fakeCtx);
+
+		expect(notifications).toHaveLength(1);
+		const text = notifications[0]!.message;
+		expect(text).toMatch(/Spending cap:\s+\(none configured\)/);
+		expect(text).not.toMatch(/Headroom:\s+\$/);
+		expect(text).toMatch(/Balance:\s+Not exposed by the Neon API\./);
+	});
+});
