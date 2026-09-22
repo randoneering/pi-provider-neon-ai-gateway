@@ -18,6 +18,12 @@ import { resolveNeonManagementKey } from "./config.js";
 export const ALERT_THRESHOLDS = [50, 80, 95] as const;
 const CAP_CACHE_TTL_MS = 15 * 60 * 1000;
 
+/** Clear the in-memory cap cache after a successful limit mutation. */
+export function invalidateNeonCapCache(): void {
+	// Alert hooks keep their cache private to each registered hook. This hook is
+	// intentionally a no-op until a shared cache is introduced.
+}
+
 interface CapCache {
 	cap: number | null;
 	fetchedAt: number;
