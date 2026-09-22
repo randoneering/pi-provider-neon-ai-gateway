@@ -1,10 +1,58 @@
 import { describe, expect, it } from "vitest";
-import { normalizeNeonBaseUrl, NEON_AI_GATEWAY_BASE_URL_ENV, NEON_AI_GATEWAY_TOKEN_ENV } from "../src/config.js";
+import {
+	NEON_API_BASE_URL,
+	NEON_API_KEY_ENV,
+	NEON_AI_GATEWAY_BASE_URL_ENV,
+	NEON_AI_GATEWAY_TOKEN_ENV,
+	normalizeNeonBaseUrl,
+	resolveNeonManagementKey,
+} from "../src/config.js";
 
 describe("config constants", () => {
 	it("uses stable env var names", () => {
 		expect(NEON_AI_GATEWAY_TOKEN_ENV).toBe("NEON_AI_GATEWAY_TOKEN");
 		expect(NEON_AI_GATEWAY_BASE_URL_ENV).toBe("NEON_AI_GATEWAY_BASE_URL");
+		expect(NEON_API_KEY_ENV).toBe("NEON_API_KEY");
+	});
+
+	it("points at the public Neon management API", () => {
+		expect(NEON_API_BASE_URL).toBe("https://console.neon.tech/api/v2");
+	});
+});
+
+describe("resolveNeonManagementKey", () => {
+	it("returns undefined when neither source is set", () => {
+		expect(resolveNeonManagementKey({})).toBeUndefined();
+	});
+
+	it("prefers stored over process env", () => {
+		expect(
+			resolveNeonManagementKey({
+				processEnv: { NEON_API_KEY: "napi_process" },
+				storedManagementKey: "napi_stored",
+			}),
+		).toBe("napi_stored");
+	});
+
+	it("falls back to process env when stored is missing", () => {
+		expect(
+			resolveNeonManagementKey({
+				processEnv: { NEON_API_KEY: "napi_process" },
+			}),
+		).toBe("napi_process");
+	});
+
+	it("treats empty stored as missing", () => {
+		expect(
+			resolveNeonManagementKey({
+				processEnv: { NEON_API_KEY: "napi_process" },
+				storedManagementKey: "",
+			}),
+		).toBe("napi_process");
+	});
+
+	it("returns undefined for whitespace-only stored value", () => {
+		expect(resolveNeonManagementKey({ storedManagementKey: "   " })).toBeUndefined();
 	});
 });
 

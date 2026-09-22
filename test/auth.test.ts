@@ -33,6 +33,22 @@ describe("validateGatewayToken", () => {
 	});
 });
 
+describe("validateManagementKey", () => {
+	it("rejects command and environment expressions", () => {
+		expect(() => authModule.validateManagementKey("!echo secret")).toThrow(/literal/);
+		expect(() => authModule.validateManagementKey("$TOKEN")).toThrow(/literal/);
+	});
+
+	it("rejects keys that don't start with napi_", () => {
+		expect(() => authModule.validateManagementKey("nt_live_wrong_kind")).toThrow(/napi_/);
+		expect(() => authModule.validateManagementKey("plain-string")).toThrow(/napi_/);
+	});
+
+	it("accepts a literal napi_ key", () => {
+		expect(() => authModule.validateManagementKey("napi_example_123")).not.toThrow();
+	});
+});
+
 describe("auth file shape", () => {
 	let tempDir: string;
 	beforeEach(() => {
@@ -77,6 +93,40 @@ describe("auth file shape", () => {
 		expect(neon.type).toBe("api_key");
 		expect(neon.key).toBe("npat-test");
 		expect(neon.env).toEqual({ NEON_AI_GATEWAY_BASE_URL: "https://br-x.ai.neon.tech" });
+	});
+
+	it("preserves managementKey and orgId on the neon entry", () => {
+		const authPath = join(tempDir, "auth.json");
+		const data: Record<string, unknown> = {
+			neon: {
+				type: "api_key",
+				key: "nt_live_test",
+				env: { NEON_AI_GATEWAY_BASE_URL: "https://br-x.ai.neon.tech" },
+				managementKey: "napi_test",
+				orgId: "org-test-1",
+			},
+		};
+		writeFileSync(authPath, JSON.stringify(data, null, 2));
+		const parsed = readAuthFileLike(authPath);
+		const neon = parsed.neon as Record<string, unknown>;
+		expect(neon.managementKey).toBe("napi_test");
+		expect(neon.orgId).toBe("org-test-1");
+	});
+
+	it("round-trips an entry without managementKey (backwards compat)", () => {
+		const authPath = join(tempDir, "auth.json");
+		const data: Record<string, unknown> = {
+			neon: {
+				type: "api_key",
+				key: "nt_live_test",
+				env: { NEON_AI_GATEWAY_BASE_URL: "https://br-x.ai.neon.tech" },
+			},
+		};
+		writeFileSync(authPath, JSON.stringify(data, null, 2));
+		const parsed = readAuthFileLike(authPath);
+		const neon = parsed.neon as Record<string, unknown>;
+		expect(neon.managementKey).toBeUndefined();
+		expect(neon.orgId).toBeUndefined();
 	});
 
 	it("module exports registerNeonAuthCommands", () => {

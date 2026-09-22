@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Added
+
+- `/neon-balance` shows the org spending cap (from the public Neon management API) plus this machine's cumulative Neon spend across local session files. Requires a separate `napi_...` management key, prompted by `/neon-login` (optional) or accepted via the `NEON_API_KEY` env var.
+- `/neon-login` now optionally prompts for a Neon management API key. `/neon-status` reports whether the key and a cached org id are configured.
+
 ### Fixed
 
 - Fall back to the process environment when a stored gateway URL is empty.

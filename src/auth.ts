@@ -29,7 +29,23 @@ export function validateGatewayToken(value: string): void {
 	}
 }
 
-interface AuthFileShape {
+/**
+ * Validate a Neon management API key (`napi_...`).
+ *
+ * Rejects shell-expression prefixes that pi might evaluate and rejects
+ * keys that don't start with `napi_` so a pasted gateway token can't
+ * accidentally end up sent to the management API.
+ */
+export function validateManagementKey(value: string): void {
+	if (value.startsWith("!") || value.startsWith("$")) {
+		throw new Error("Neon management key must be a literal token, not a shell expression");
+	}
+	if (!value.startsWith("napi_")) {
+		throw new Error("Neon management key must start with napi_");
+	}
+}
+
+export interface AuthFileShape {
 	[key: string]: unknown;
 }
 
@@ -37,7 +53,7 @@ function getAuthPath(): string {
 	return join(getAgentDir(), "auth.json");
 }
 
-function readAuthFile(): AuthFileShape {
+export function readAuthFile(): AuthFileShape {
 	const path = getAuthPath();
 	if (!existsSync(path)) return {};
 	let raw: string;
@@ -58,7 +74,7 @@ function readAuthFile(): AuthFileShape {
 	}
 }
 
-async function writeAuthFile(data: AuthFileShape): Promise<void> {
+export async function writeAuthFile(data: AuthFileShape): Promise<void> {
 	const path = getAuthPath();
 	await mkdir(dirname(path), { recursive: true });
 	const json = `${JSON.stringify(data, null, 2)}\n`;
@@ -105,11 +121,34 @@ export function registerNeonAuthCommands(pi: ExtensionAPI): void {
 				env: { [NEON_AI_GATEWAY_BASE_URL_ENV]: baseUrl },
 			};
 			if (typeof existing === "object" && existing !== null) {
-				const priorEnv = (existing as Record<string, unknown>).env;
+				const prior = existing as Record<string, unknown>;
+				const priorEnv = prior.env;
 				if (priorEnv && typeof priorEnv === "object") {
 					credential.env = { ...(priorEnv as Record<string, string>), [NEON_AI_GATEWAY_BASE_URL_ENV]: baseUrl };
 				}
+				if (typeof prior.managementKey === "string") {
+					credential.managementKey = prior.managementKey;
+				}
+				if (typeof prior.orgId === "string") {
+					credential.orgId = prior.orgId;
+				}
 			}
+
+			const managementKeyInput = await ctx.ui.input(
+				"Neon management API key (optional, enables /neon-balance; format: napi_...)",
+			);
+			if (managementKeyInput) {
+				try {
+					validateManagementKey(managementKeyInput);
+					credential.managementKey = managementKeyInput;
+				} catch (error) {
+					ctx.ui.notify(
+						`Skipped management key: ${(error as Error).message}. Gateway credential saved.`,
+						"warning",
+					);
+				}
+			}
+
 			file[PROVIDER_ID] = credential;
 			await writeAuthFile(file);
 
@@ -139,24 +178,29 @@ export function registerNeonAuthCommands(pi: ExtensionAPI): void {
 		handler: async (_args, ctx) => {
 			const file = readAuthFile();
 			const stored = file[PROVIDER_ID];
-			const storedBaseUrl =
-				stored && typeof stored === "object"
-					? (stored as Record<string, unknown>).env &&
-						typeof (stored as Record<string, unknown>).env === "object"
-						? ((stored as Record<string, unknown>).env as Record<string, string>)[NEON_AI_GATEWAY_BASE_URL_ENV]
-						: undefined
+			const storedObj = stored && typeof stored === "object" ? (stored as Record<string, unknown>) : undefined;
+			const storedEnv =
+				storedObj?.env && typeof storedObj.env === "object"
+					? (storedObj.env as Record<string, string>)
 					: undefined;
+			const storedBaseUrl = storedEnv?.[NEON_AI_GATEWAY_BASE_URL_ENV];
 			const fromEnv = process.env[NEON_AI_GATEWAY_BASE_URL_ENV];
 			const hasToken =
-				!!process.env[NEON_AI_GATEWAY_TOKEN_ENV] ||
-				!!(stored && typeof stored === "object" && (stored as Record<string, unknown>).key);
+				!!process.env[NEON_AI_GATEWAY_TOKEN_ENV] || !!storedObj?.key;
 			const resolvedBaseUrl = storedBaseUrl ?? fromEnv;
+			const hasManagementKey =
+				!!process.env.NEON_API_KEY ||
+				!!(storedObj && typeof storedObj.managementKey === "string");
+			const storedOrgId =
+				storedObj && typeof storedObj.orgId === "string" ? storedObj.orgId : undefined;
 			ctx.ui.notify(
 				[
 					`Neon AI Gateway status:`,
 					`  Token: ${hasToken ? "configured" : "missing"}`,
 					`  Base URL: ${resolvedBaseUrl ?? "(not set)"}`,
 					`  Source: ${storedBaseUrl ? "auth.json" : fromEnv ? "environment" : "(none)"}`,
+					`  Management key: ${hasManagementKey ? "configured" : "(not set; /neon-balance disabled)"}`,
+					`  Org id: ${storedOrgId ?? "(auto-discover on first /neon-balance)"}`,
 				].join("\n"),
 				hasToken && resolvedBaseUrl ? "info" : "warning",
 			);

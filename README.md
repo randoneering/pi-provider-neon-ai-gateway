@@ -52,6 +52,30 @@ pi
 
 Or run `/neon-login` inside pi and paste both values. `/neon-status` shows the resolved base URL. `/neon-logout` clears it.
 
+### Optional: enable `/neon-balance`
+
+The gateway token alone cannot query the Neon management API. To see the org spending cap and your local cumulative Neon spend, run `/neon-login` and paste a separate Neon management API key (`napi_...`) when prompted. The key is stored on the same `neon` entry in `auth.json` under `managementKey` and is only sent to `console.neon.tech`. Set it via the shell instead with:
+
+```bash
+export NEON_API_KEY="napi_..."
+```
+
+`/neon-balance` then resolves your org from `/users/me/organizations`, caches the org id back into `auth.json`, and fetches `/organizations/{org_id}/billing/spending_limit`. Local spend is aggregated from the session JSONL files under `~/.pi/agent/sessions/`.
+
+The output looks like:
+
+```
+Neon account balance:
+  Org:            My Org (org-...)
+  Spending cap:   $50.00
+  Local spend:    $0.23 across 14 sessions (since Sep 2026)
+  Headroom:       $49.77 (cap − local spend, this machine only)
+  Balance:        Not exposed by the Neon API. Visible in the Neon Console.
+  Note:           Local spend ignores other machines and any Neon DB charges.
+```
+
+The actual prepaid credit balance is not exposed by the Neon management API. `Headroom` is a derivation (cap minus this machine's spend), not a real balance, and undercounts anything spent elsewhere or charged for Neon database usage.
+
 ## Use
 
 ```
