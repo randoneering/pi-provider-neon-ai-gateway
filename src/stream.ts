@@ -218,6 +218,33 @@ function normalizeError(value: unknown): unknown | undefined {
 	return { error };
 }
 
+/**
+ * Add a retry delay to Neon's account-quota error when the gateway supplies
+ * a valid positive Retry-After value. Other bodies are returned unchanged.
+ */
+export function enrichRateLimitMessage(body: unknown, retryAfterHeader: string | null | undefined): unknown {
+	if (!isRecord(body) || !isRecord(body.error)) return body;
+	const error = body.error;
+	const code =
+		typeof error.code === "string"
+			? error.code
+			: typeof error.type === "string"
+				? error.type
+				: undefined;
+	if (code !== "REQUEST_LIMIT_EXCEEDED") return body;
+	if (!retryAfterHeader || !/^\d+$/u.test(retryAfterHeader)) return body;
+	const seconds = Number(retryAfterHeader);
+	if (!Number.isSafeInteger(seconds) || seconds <= 0) return body;
+	if (typeof error.message !== "string" || error.message.includes("; retry after ")) return body;
+	return {
+		...body,
+		error: {
+			...error,
+			message: `${error.message}; retry after ${seconds}s`,
+		},
+	};
+}
+
 function makeNeonFetch(baseFetch: FetchFunction | undefined, isHarmonyModel: boolean): FetchFunction {
 	const request = baseFetch ?? globalThis.fetch;
 	return async (input, init) => {
@@ -246,8 +273,11 @@ function makeNeonFetch(baseFetch: FetchFunction | undefined, isHarmonyModel: boo
 		} catch {
 			return response;
 		}
-		const normalized = normalizeError(value);
+		let normalized = normalizeError(value);
 		if (normalized === undefined) return response;
+		if (response.status === 429) {
+			normalized = enrichRateLimitMessage(normalized, response.headers.get("retry-after"));
+		}
 		return new Response(JSON.stringify(normalized), {
 			status: response.status,
 			statusText: response.statusText,

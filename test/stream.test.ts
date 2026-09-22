@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { transformNeonPayload } from "../src/stream.js";
+import { enrichRateLimitMessage, transformNeonPayload } from "../src/stream.js";
 
 function withBase(payload: Record<string, unknown>): Record<string, unknown> {
 	return { model: "test", messages: [], ...payload };
@@ -258,5 +258,43 @@ describe("transformNeonPayload", () => {
 		const snapshot = JSON.stringify(original);
 		transformNeonPayload(original, "claude-sonnet-4-7");
 		expect(JSON.stringify(original)).toBe(snapshot);
+	});
+});
+
+describe("enrichRateLimitMessage", () => {
+	const body = (code = "REQUEST_LIMIT_EXCEEDED") => ({
+		error: {
+			message: "ai gateway daily token limit exceeded",
+			type: code,
+			code,
+		},
+	});
+
+	it("appends a positive Retry-After delay for account quota errors", () => {
+		const result = enrichRateLimitMessage(body(), "47") as { error: { message: string } };
+		expect(result.error.message).toBe("ai gateway daily token limit exceeded; retry after 47s");
+	});
+
+	it("leaves account quota errors unchanged without Retry-After", () => {
+		const original = body();
+		const result = enrichRateLimitMessage(original, null);
+		expect(result).toBe(original);
+	});
+
+	it("leaves account quota errors unchanged for malformed Retry-After", () => {
+		const original = body();
+		expect(enrichRateLimitMessage(original, "not-a-number")).toBe(original);
+		expect(enrichRateLimitMessage(original, "0")).toBe(original);
+	});
+
+	it("leaves unrelated 429 errors unchanged", () => {
+		const original = body("UPSTREAM_RATE_LIMIT");
+		expect(enrichRateLimitMessage(original, "47")).toBe(original);
+	});
+
+	it("leaves non-error and non-quota bodies unchanged", () => {
+		const original = { message: "server error" };
+		expect(enrichRateLimitMessage(original, "47")).toBe(original);
+		expect(enrichRateLimitMessage({ error: "server error" }, "47")).toEqual({ error: "server error" });
 	});
 });
