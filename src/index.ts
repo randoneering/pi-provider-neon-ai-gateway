@@ -17,6 +17,7 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { registerNeonAccountCommands } from "./account.js";
+import { registerNeonAlertHooks } from "./alerts.js";
 import { registerNeonAuthCommands } from "./auth.js";
 import { NEON_AI_GATEWAY_BASE_URL_ENV, NEON_AI_GATEWAY_TOKEN_ENV } from "./config.js";
 import { NEON_MODELS } from "./models.js";
@@ -35,4 +36,5 @@ export default function (pi: ExtensionAPI): void {
 
 	registerNeonAuthCommands(pi);
 	registerNeonAccountCommands(pi);
+	registerNeonAlertHooks(pi);
 }
