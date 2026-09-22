@@ -409,3 +409,137 @@ describe("/neon-balance command output", () => {
 		expect(text).toMatch(/Balance:\s+Not exposed by the Neon API\./);
 	});
 });
+
+describe("/neon-spending-limit command output", () => {
+	let tempDir: string;
+	let originalFetch: typeof globalThis.fetch;
+	let notifications: { message: string; level: string }[];
+
+	beforeEach(() => {
+		tempDir = mkdtempSync(join(tmpdir(), "pi-neon-limit-"));
+		setAgentDir(tempDir);
+		originalFetch = globalThis.fetch;
+		notifications = [];
+	});
+
+	afterEach(() => {
+		unsetAgentDir();
+		rmSync(tempDir, { recursive: true, force: true });
+		globalThis.fetch = originalFetch;
+		delete process.env.NEON_API_KEY;
+	});
+
+	function writeCredential(fields: Record<string, unknown> = {}): void {
+		writeFileSync(
+			join(tempDir, "auth.json"),
+			JSON.stringify({
+				neon: {
+					type: "api_key",
+					key: "nt_live_test",
+					env: { NEON_AI_GATEWAY_BASE_URL: "https://br-x.ai.neon.tech" },
+					...fields,
+				},
+			}),
+		);
+	}
+
+	function registerAndGetHandler(): (args: string, ctx: unknown) => Promise<void> {
+		const fakePi = {
+			_handler: undefined as ((args: string, ctx: unknown) => Promise<void>) | undefined,
+			registerCommand(_name: string, options: { handler: (args: string, ctx: unknown) => Promise<void> }) {
+				this._handler = options.handler;
+			},
+		};
+		accountModule.registerNeonSpendingLimitCommand(fakePi as never);
+		expect(fakePi._handler).toBeTypeOf("function");
+		return fakePi._handler!;
+	}
+
+	function context(): { ui: { notify: (message: string, level: string) => void } } {
+		return {
+			ui: {
+				notify(message: string, level: string) {
+					notifications.push({ message, level });
+			},
+			},
+		};
+	}
+
+	it("renders the configured cap and org on separate lines", async () => {
+		writeCredential({ managementKey: "napi_test", orgId: "org-test-1" });
+		globalThis.fetch = (async () =>
+			new Response(JSON.stringify({ spending_limit_cents: 5000 }), {
+				status: 200,
+				headers: { "content-type": "application/json" },
+			})) as typeof globalThis.fetch;
+
+		await registerAndGetHandler()("", context());
+
+		expect(notifications).toEqual([
+			{ message: "Neon spending limit: $50.00\nOrg: org-test-1", level: "info" },
+		]);
+	});
+
+	it("renders no configured cap", async () => {
+		writeCredential({ managementKey: "napi_test", orgId: "org-test-1" });
+		globalThis.fetch = (async () =>
+			new Response(JSON.stringify({ spending_limit_cents: null }), {
+				status: 200,
+				headers: { "content-type": "application/json" },
+			})) as typeof globalThis.fetch;
+
+		await registerAndGetHandler()("", context());
+
+		expect(notifications[0]).toEqual({
+			message: "Neon spending limit: (none configured)\nOrg: org-test-1",
+			level: "info",
+		});
+	});
+
+	it("warns when the management key is missing", async () => {
+		writeCredential({ orgId: "org-test-1" });
+
+		await registerAndGetHandler()("", context());
+
+		expect(notifications).toEqual([
+			{
+				message: "Neon spending limit unavailable: no management key configured. Re-run /neon-login or export NEON_API_KEY.",
+				level: "warning",
+			},
+		]);
+	});
+
+	it("auto-discovers and displays the org name", async () => {
+		writeCredential({ managementKey: "napi_test" });
+		let call = 0;
+		globalThis.fetch = (async () => {
+			call += 1;
+			const body = call === 1
+				? { organizations: [{ id: "org-discovered", name: "My Org" }] }
+				: { spending_limit_cents: 1200 };
+			return new Response(JSON.stringify(body), {
+				status: 200,
+				headers: { "content-type": "application/json" },
+			});
+		}) as typeof globalThis.fetch;
+
+		await registerAndGetHandler()("", context());
+
+		expect(notifications[0]).toEqual({
+			message: "Neon spending limit: $12.00\nOrg: My Org (org-discovered)",
+			level: "info",
+		});
+	});
+
+	it("warns on fetch errors without throwing", async () => {
+		writeCredential({ managementKey: "napi_test", orgId: "org-test-1" });
+		globalThis.fetch = (async () => {
+			throw new Error("management API unavailable");
+		}) as typeof globalThis.fetch;
+
+		await expect(registerAndGetHandler()("", context())).resolves.toBeUndefined();
+		expect(notifications).toEqual([
+			{ message: "Neon spending limit unavailable: management API unavailable", level: "warning" },
+		]);
+	});
+});

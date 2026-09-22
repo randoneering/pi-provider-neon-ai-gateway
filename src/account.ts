@@ -260,6 +260,46 @@ async function persistOrgId(orgId: string): Promise<void> {
 // /neon-balance command
 // ---------------------------------------------------------------------------
 
+export function registerNeonSpendingLimitCommand(pi: ExtensionAPI): void {
+	pi.registerCommand("neon-spending-limit", {
+		description: "Show the Neon organization spending cap",
+		handler: async (_args, ctx) => {
+			const stored = await readStoredNeonCredential();
+			const managementKey = resolveNeonManagementKey({
+				processEnv: process.env as Record<string, string | undefined>,
+				storedManagementKey: stored.managementKey,
+			});
+
+			if (!managementKey) {
+				ctx.ui.notify(
+					"Neon spending limit unavailable: no management key configured. Re-run /neon-login or export NEON_API_KEY.",
+					"warning",
+				);
+				return;
+			}
+
+			try {
+				let orgId = stored.orgId;
+				let orgDisplay = orgId;
+				if (!orgId) {
+					const org = await fetchCurrentOrg(managementKey);
+					orgId = org.id;
+					orgDisplay = `${org.name} (${org.id})`;
+					await persistOrgId(org.id);
+				}
+				const cap = await fetchSpendingLimit(orgId, managementKey);
+				const limit = cap === null ? "(none configured)" : formatUsd(cap);
+				ctx.ui.notify(
+					`Neon spending limit: ${limit}\nOrg: ${orgDisplay ?? orgId}`,
+					"info",
+				);
+			} catch (error) {
+				ctx.ui.notify(`Neon spending limit unavailable: ${(error as Error).message}`, "warning");
+			}
+		},
+	});
+}
+
 export function registerNeonAccountCommands(pi: ExtensionAPI): void {
 	pi.registerCommand("neon-balance", {
 		description: "Show org spending cap and this machine's local Neon spend",
