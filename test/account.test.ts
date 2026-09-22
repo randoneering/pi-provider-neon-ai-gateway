@@ -273,6 +273,12 @@ describe("/neon-balance command output", () => {
 		globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
 			const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
 			fetchCalls.push({ url, init });
+			if (url.includes("/aigw_credits/balance")) {
+				return new Response(JSON.stringify({ message: "not found" }), {
+					status: 404,
+					headers: { "content-type": "application/json" },
+				});
+			}
 			return new Response(JSON.stringify({ spending_limit_cents: 5000 }), {
 				status: 200,
 				headers: { "content-type": "application/json" },
@@ -352,14 +358,15 @@ describe("/neon-balance command output", () => {
 		expect(text).toMatch(/Spending cap:\s+\$50\.00/);
 		expect(text).toMatch(/Local spend:\s+\$0\.23/);
 		expect(text).toMatch(/Headroom:\s+\$49\.77/);
-		expect(text).toContain("(cap − local spend, this machine only)");
-		expect(text).toMatch(/Balance:\s+Not exposed by the Neon API\./);
+		expect(text).toContain("(binding limit − local spend, this machine only)");
+		expect(text).toMatch(/Balance:\s+\(no balance\)/);
 		expect(text).toMatch(/Note:\s+Local spend ignores other machines/);
 		// Negative regression: we must NOT claim we know the real balance.
 		expect(text).not.toMatch(/Remaining:\s+\$/);
 		expect(text).not.toMatch(/^  Balance:\s+\$/m);
-		expect(fetchCalls).toHaveLength(1);
-		expect(fetchCalls[0]!.url).toContain("/organizations/org-test-1/billing/spending_limit");
+		expect(fetchCalls).toHaveLength(2);
+		expect(fetchCalls.some((call) => call.url.includes("/organizations/org-test-1/billing/spending_limit"))).toBe(true);
+		expect(fetchCalls.some((call) => call.url.includes("/organizations/org-test-1/billing/aigw_credits/balance"))).toBe(true);
 	});
 
 	it("renders '(none configured)' when spending_limit_cents is null", async () => {
@@ -406,7 +413,26 @@ describe("/neon-balance command output", () => {
 		const text = notifications[0]!.message;
 		expect(text).toMatch(/Spending cap:\s+\(none configured\)/);
 		expect(text).not.toMatch(/Headroom:\s+\$/);
-		expect(text).toMatch(/Balance:\s+Not exposed by the Neon API\./);
+		expect(text).toMatch(/Balance:\s+\(no balance\)/);
+	});
+
+	it("renders the real AI Gateway credit balance", async () => {
+		const authPath = join(tempDir, "auth.json");
+		writeFileSync(authPath, JSON.stringify({ neon: { type: "api_key", key: "nt_live_test", managementKey: "napi_test", orgId: "org-test-1" } }));
+		globalThis.fetch = (async (input: RequestInfo | URL) => {
+			const url = typeof input === "string" ? input : input.toString();
+			const body = url.includes("aigw_credits")
+				? { balance_cents: 7777, as_of: "2026-09-22T23:11:27Z" }
+				: { spending_limit_cents: 10000 };
+			return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+		}) as typeof globalThis.fetch;
+		const notifications: { message: string; level: string }[] = [];
+		const fakePi = { _handler: undefined as ((args: string, ctx: unknown) => Promise<void>) | undefined, registerCommand(_name: string, options: { handler: (args: string, ctx: unknown) => Promise<void> }) { this._handler = options.handler; } };
+		const fakeCtx = { ui: { notify(message: string, level: string) { notifications.push({ message, level }); } } };
+		accountModule.registerNeonAccountCommands(fakePi as never);
+		await fakePi._handler!("", fakeCtx);
+		const text = notifications[0]!.message;
+		expect(text).toContain("Balance:       $77.77 (as of 2026-09-22 23:11 UTC)");
 	});
 });
 
