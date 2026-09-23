@@ -52,29 +52,92 @@ pi
 
 Or run `/neon-login` inside pi and paste both values. `/neon-status` shows the resolved base URL. `/neon-logout` clears it.
 
-### Optional: enable `/neon-balance`
+### Management key (optional)
 
-The gateway token alone cannot query the Neon management API. To see the org spending cap and your local cumulative Neon spend, run `/neon-login` and paste a separate Neon management API key (`napi_...`) when prompted. The key is stored on the same `neon` entry in `auth.json` under `managementKey` and is only sent to `console.neon.tech`. Set it via the shell instead with:
+The gateway token alone cannot query the Neon management API. To use the balance, spending-limit, and cap-guard commands below, run `/neon-login` and paste a separate Neon management API key (`napi_...`) when prompted. The key is stored on the same `neon` entry in `auth.json` under `managementKey` and is only sent to `console.neon.tech`. Set it via the shell instead with:
 
 ```bash
 export NEON_API_KEY="napi_..."
 ```
 
-`/neon-balance` then resolves your org from `/users/me/organizations`, caches the org id back into `auth.json`, and fetches `/organizations/{org_id}/billing/spending_limit`. Local spend is aggregated from the session JSONL files under `~/.pi/agent/sessions/`.
+A read-access key is enough for viewing. Changing the spending cap requires an organization **admin** key.
 
-The output looks like:
+## Commands
 
-```
+| Command | Needs key | What it does |
+|---|---|---|
+| `/neon-login` | no | Store the gateway token, branch URL, and optional management key |
+| `/neon-status` | no | Show token, base URL, management key, and cached org id |
+| `/neon-logout` | no | Clear the stored credential |
+| `/neon-balance` | yes | Show the real AI Gateway credit balance, spending cap, local spend, and headroom |
+| `/neon-spending-limit` | yes | Show the org spending cap |
+| `/neon-spending-limit set 50` | yes, admin | Set the cap to $50.00 (dollars, up to 2 decimals) |
+| `/neon-spending-limit clear` | yes, admin | Remove the cap |
+| `/neon-cap-block on` / `off` / `status` | yes | Opt-in guard that blocks turns when local spend reaches the binding limit |
+| `/neon-models` | no | List all Neon models with input/output pricing |
+| `/neon-limits` | no | Show the latest upstream rate-limit headers from 429 responses |
+
+### `/neon-balance`
+
+Fetches the real prepaid credit balance from `/organizations/{org_id}/billing/aigw_credits/balance` and the spending cap from `/organizations/{org_id}/billing/spending_limit`. Local spend is aggregated from the session JSONL files under `~/.pi/agent/sessions/`.
+
+```text
 Neon account balance:
-  Org:            My Org (org-...)
-  Spending cap:   $50.00
-  Local spend:    $0.23 across 14 sessions (since Sep 2026)
-  Headroom:       $49.77 (cap − local spend, this machine only)
-  Balance:        Not exposed by the Neon API. Visible in the Neon Console.
-  Note:           Local spend ignores other machines and any Neon DB charges.
+  Org:           org-twilight-cake-44366159
+  Spending cap:  $100.00
+  Balance:       $77.77 (as of 2026-09-22 23:11 UTC)
+  Local spend:   $1.62 across 45 sessions (since Sep 2026)
+  Headroom:      $76.15 (binding limit − local spend, this machine only)
+  Note:          Local spend ignores other machines and any Neon DB charges.
 ```
 
-The actual prepaid credit balance is not exposed by the Neon management API. `Headroom` is a derivation (cap minus this machine's spend), not a real balance, and undercounts anything spent elsewhere or charged for Neon database usage.
+`Headroom` uses the smaller of the spending cap and the credit balance, minus local spend on this machine. It is a derivation, not an org-wide number.
+
+### Spending cap alerts
+
+When a spending cap is configured, the extension warns once per session when local spend crosses 50%, 80%, and 95% of the cap. Alerts say "this machine" because the extension cannot observe usage from other machines.
+
+### Footer status
+
+The extension publishes a `neon-cap` status with the cap and this machine's percentage used, for example `$100.00 · 12%`.
+
+To show it in the powerline footer, add a custom item and a layout slot in your pi config:
+
+```nix
+customItems = [
+  { id = "nixos"; statusKey = "nixos"; excludeFromExtensionStatuses = true; }
+  { id = "neon-cap"; statusKey = "neon-cap"; }
+];
+
+powerlineConfig.layout.left = [
+  "custom:nixos"
+  "model"
+  "thinking"
+  "shell_mode"
+  "path"
+  "git"
+  "queue"
+  "context_pct"
+  "cost"
+  "custom:neon-cap"
+];
+```
+
+### Opt-in cap blocking
+
+By default, alerts are advisory. To stop agent turns when local spend reaches the binding limit:
+
+```text
+/neon-cap-block on
+```
+
+The setting persists in `auth.json` under `neon.capBlockEnabled`. When blocked, the message shows local spend, the binding limit, and how to disable it:
+
+```text
+Neon cap block: local spend $1.62 has reached the binding limit of $0.01 on this machine. This opt-in local-spend block prevented the agent turn. Run /neon-cap-block off to disable it.
+```
+
+Missing credentials and management API failures fail open so an API outage does not unexpectedly block the agent.
 
 ## Use
 
@@ -82,7 +145,7 @@ The actual prepaid credit balance is not exposed by the Neon management API. `He
 /model
 ```
 
-Pick any `neon/<model-id>`. All 34 models show up in `pi --list-models`.
+Pick any `neon/<model-id>`. All 34 models show up in `pi --list-models`. Run `/neon-models` to see pricing for each model.
 
 ## Models
 
@@ -122,6 +185,8 @@ The gateway accepts OpenAI Chat Completions but rejects different params per ups
 - Per-model cleanup of `frequency_penalty`, `presence_penalty`, `seed`, `stop`, `temperature`, `top_p`, `reasoning_effort`
 - Translates GPT-OSS harmony `[{ type: "text" }, { type: "reasoning" }]` into flat `content` + `reasoning_content`
 - Unwraps Neon's `{ error: { message } }` envelope
+
+Beyond request handling, the extension adds local spend tracking, spending cap alerts, real AI Gateway balance lookup, rate-limit header capture, model pricing, and an opt-in turn guard. See [Commands](#commands).
 
 ## Develop
 
