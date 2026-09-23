@@ -17,6 +17,7 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { registerNeonCapBlockCommand, registerNeonCapBlockGuard } from "./cap-block.js";
 import { registerNeonAccountCommands, registerNeonSpendingLimitCommand } from "./account.js";
 import { registerNeonAlertHooks } from "./alerts.js";
 import { registerNeonAuthCommands } from "./auth.js";
@@ -38,6 +39,8 @@ export default function (pi: ExtensionAPI): void {
 	});
 
 	registerNeonAuthCommands(pi);
+	registerNeonCapBlockCommand(pi);
+	registerNeonCapBlockGuard(pi);
 	registerNeonAccountCommands(pi);
 	registerNeonAlertHooks(pi);
 	registerNeonSpendingLimitCommand(pi);
