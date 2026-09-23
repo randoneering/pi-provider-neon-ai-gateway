@@ -22,6 +22,7 @@ import { registerNeonAlertHooks } from "./alerts.js";
 import { registerNeonAuthCommands } from "./auth.js";
 import { NEON_AI_GATEWAY_BASE_URL_ENV, NEON_AI_GATEWAY_TOKEN_ENV } from "./config.js";
 import { NEON_MODELS } from "./models.js";
+import { registerNeonModelCostCommand } from "./model-cost.js";
 import { registerNeonRateLimitHook } from "./ratelimit.js";
 import { streamNeon } from "./stream.js";
 
@@ -41,4 +42,5 @@ export default function (pi: ExtensionAPI): void {
 	registerNeonAlertHooks(pi);
 	registerNeonSpendingLimitCommand(pi);
 	registerNeonRateLimitHook(pi);
+	registerNeonModelCostCommand(pi);
 }
