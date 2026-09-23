@@ -434,6 +434,36 @@ describe("/neon-balance command output", () => {
 		const text = notifications[0]!.message;
 		expect(text).toContain("Balance:       $77.77 (as of 2026-09-22 23:11 UTC)");
 	});
+
+	it("uses the persisted orgId and skips /users/me/organizations", async () => {
+		const authPath = join(tempDir, "auth.json");
+		writeFileSync(authPath, JSON.stringify({ neon: { type: "api_key", key: "nt_live_test", managementKey: "napi_test", orgId: "org-test-1" } }));
+		const calls: string[] = [];
+		globalThis.fetch = (async (input: RequestInfo | URL) => {
+			const url = typeof input === "string" ? input : input.toString();
+			calls.push(url);
+			if (url.includes("/users/me/organizations")) {
+				throw new Error("auto-discovery should be skipped when orgId is persisted");
+			}
+			if (url.includes("/aigw_credits/balance")) {
+				return new Response(JSON.stringify({ balance_cents: 1000, as_of: "2026-09-22T00:00:00Z" }), { status: 200 });
+			}
+			return new Response(JSON.stringify({ spending_limit_cents: 5000 }), { status: 200 });
+		}) as typeof fetch;
+		const notifications: { message: string; level: string }[] = [];
+		type Handler = (a: string, c: unknown) => Promise<void>;
+		const fakePi = {
+			_handler: undefined as Handler | undefined,
+			registerCommand(_n: string, o: { handler: Handler }) {
+				this._handler = o.handler;
+			},
+		};
+		const fakeCtx = { ui: { notify: (m: string, l: string) => notifications.push({ message: m, level: l }) } };
+		accountModule.registerNeonAccountCommands(fakePi as never);
+		await fakePi._handler!("", fakeCtx);
+		expect(calls.some((url) => url.includes("/users/me/organizations"))).toBe(false);
+		expect(notifications[0]?.message).toContain("org-test-1");
+	});
 });
 
 describe("/neon-spending-limit command output", () => {

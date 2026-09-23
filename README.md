@@ -74,6 +74,8 @@ A read-access key is enough for viewing. Changing the spending cap requires an o
 | `/neon-spending-limit set 50` | yes, admin | Set the cap to $50.00 (dollars, up to 2 decimals) |
 | `/neon-spending-limit clear` | yes, admin | Remove the cap |
 | `/neon-cap-block on` / `off` / `status` | yes | Opt-in guard that blocks turns when local spend reaches the binding limit |
+| `/neon-org list` | yes | List the orgs your management key can access |
+| `/neon-org use <id\|name>` | yes | Switch the active org, persist in `auth.json` |
 | `/neon-models` | no | List all Neon models with input/output pricing |
 | `/neon-limits` | no | Show the latest upstream rate-limit headers from 429 responses |
 
@@ -138,6 +140,19 @@ Neon cap block: local spend $1.62 has reached the binding limit of $0.01 on this
 ```
 
 Missing credentials and management API failures fail open so an API outage does not unexpectedly block the agent.
+
+### Multi-org
+
+`/neon-balance`, `/neon-spending-limit`, and the cap-alerts hook use the org persisted in `auth.json` under `neon.orgId`. To list or switch:
+
+```text
+/neon-org
+/neon-org list
+/neon-org use org-twilight-cake-44366159
+/neon-org use My Org
+```
+
+The active org is marked with `*` in the list output. The first time you run one of these commands without a stored `orgId`, the extension auto-selects the first org returned by `/users/me/organizations` and persists it. `/neon-org use` matches case-insensitive on exact id or name.
 
 ## Use
 

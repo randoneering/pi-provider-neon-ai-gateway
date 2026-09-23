@@ -26,6 +26,7 @@ import {
 	resolveNeonManagementKey,
 } from "./config.js";
 import { readAuthFile, writeAuthFile } from "./auth.js";
+import { resolveActiveOrg } from "./orgs.js";
 
 const PROVIDER_ID = "neon";
 const MANAGEMENT_API_TIMEOUT_MS = 10_000;
@@ -393,18 +394,13 @@ export function registerNeonSpendingLimitCommand(pi: ExtensionAPI): void {
 			}
 
 			try {
-				let orgId = stored.orgId;
-				let orgDisplay = orgId;
-				if (!orgId) {
-					const org = await fetchCurrentOrg(managementKey);
-					orgId = org.id;
-					orgDisplay = `${org.name} (${org.id})`;
-					await persistOrgId(org.id);
-				}
+				const active = await resolveActiveOrg({ storedOrgId: stored.orgId, apiKey: managementKey });
+				const orgId = active.orgId;
+				const orgDisplay = active.orgDisplay;
 				if (requestedCents !== undefined) {
 					try {
 						const cap = await setSpendingLimit(orgId, requestedCents, managementKey);
-						ctx.ui.notify(`Neon spending limit set to ${formatUsd(cap)}.\nOrg: ${orgDisplay ?? orgId}`, "info");
+						ctx.ui.notify(`Neon spending limit set to ${formatUsd(cap)}.\nOrg: ${orgDisplay}`, "info");
 					} catch (error) {
 						const message = (error as Error).message;
 						if (/status (401|403)\b/.test(message)) {
@@ -440,7 +436,7 @@ export function registerNeonSpendingLimitCommand(pi: ExtensionAPI): void {
 				const cap = await fetchSpendingLimit(orgId, managementKey);
 				const limit = cap === null ? "(none configured)" : formatUsd(cap);
 				ctx.ui.notify(
-					`Neon spending limit: ${limit}\nOrg: ${orgDisplay ?? orgId}`,
+					`Neon spending limit: ${limit}\nOrg: ${orgDisplay}`,
 					"info",
 				);
 			} catch (error) {
@@ -473,16 +469,10 @@ export function registerNeonAccountCommands(pi: ExtensionAPI): void {
 			}
 
 			let orgId = stored.orgId;
-			let orgDisplay = orgId ?? "(resolving)";
 			try {
-				if (!orgId) {
-					const org = await fetchCurrentOrg(managementKey);
-					orgId = org.id;
-					orgDisplay = `${org.name} (${org.id})`;
-					await persistOrgId(org.id);
-				} else {
-					orgDisplay = orgId;
-				}
+				const active = await resolveActiveOrg({ storedOrgId: stored.orgId, apiKey: managementKey });
+				const orgId = active.orgId;
+				const orgDisplay = active.orgDisplay;
 				const cap = await fetchSpendingLimit(orgId, managementKey);
 				const balance = await fetchAiGatewayCreditBalance(orgId, managementKey);
 				const local = await aggregateLocalSpend(getAgentDir());
