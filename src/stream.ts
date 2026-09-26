@@ -29,6 +29,7 @@ import type {
 	SimpleStreamOptions,
 } from "@earendil-works/pi-ai/compat";
 import { NEON_AI_GATEWAY_BASE_URL_ENV, resolveNeonBaseUrl } from "./config.js";
+import { canonicalModelId, MODEL_CAPABILITIES } from "./models.js";
 
 type NeonApi = "openai-completions";
 
@@ -54,11 +55,6 @@ function removeKeys(payload: Record<string, unknown>, keys: readonly string[]): 
 	for (const key of keys) delete payload[key];
 }
 
-export function canonicalModelId(modelId: string): string {
-	const lower = modelId.toLowerCase();
-	return lower.startsWith("databricks-") ? lower.slice("databricks-".length) : lower;
-}
-
 /**
  * Strip the OpenAI fields a model's upstream rejects, keyed off the model id.
  */
@@ -70,6 +66,14 @@ export function transformNeonPayload(value: unknown, modelId: string): unknown {
 	removeKeys(payload, ["store", "prompt_cache_key", "prompt_cache_retention"]);
 
 	const id = canonicalModelId(modelId);
+
+	// Upstream metadata layer: neon.com/models.json publishes the gateway
+	// contract per model. temperature === false means the model rejects
+	// temperature/top_p outright (the models.dev convention proxies both
+	// sampling knobs with that flag).
+	const caps = MODEL_CAPABILITIES[id];
+	if (caps?.temperature === false) removeKeys(payload, ["temperature", "top_p"]);
+
 	if (id.includes("claude")) {
 		removeKeys(payload, ["frequency_penalty", "presence_penalty", "seed", "reasoning_effort"]);
 		const version = /^claude-[a-z]+-(\d+)(?:-(\d+))?$/u.exec(id);
@@ -78,7 +82,9 @@ export function transformNeonPayload(value: unknown, modelId: string): unknown {
 		if (!acceptsSampling) removeKeys(payload, ["temperature", "top_p"]);
 		else if (payload.temperature !== undefined) delete payload.top_p;
 	} else if (id === "gemini-3-6-flash") {
-		removeKeys(payload, ["frequency_penalty", "presence_penalty", "temperature", "top_p"]);
+		// temperature/top_p come from the metadata layer above; gemini still
+		// rejects penalties per observed gateway behavior.
+		removeKeys(payload, ["frequency_penalty", "presence_penalty"]);
 	} else if (
 		id === "gemini-3-1-flash-lite" ||
 		id === "gemini-3-1-pro" ||
