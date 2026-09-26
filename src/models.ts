@@ -257,7 +257,7 @@ export const NEON_MODELS: Model<"openai-completions">[] = [
 		reasoning: true,
 		input: ["text"],
 		context: 131_072,
-		output: 65_536,
+		output: 25_000,
 		cost: { input: 0.15, output: 0.6, cacheRead: 0, cacheWrite: 0 },
 	}),
 	m({
@@ -266,7 +266,7 @@ export const NEON_MODELS: Model<"openai-completions">[] = [
 		reasoning: true,
 		input: ["text"],
 		context: 131_072,
-		output: 65_536,
+		output: 25_000,
 		cost: { input: 0.07, output: 0.3, cacheRead: 0, cacheWrite: 0 },
 	}),
 	m({
@@ -319,7 +319,7 @@ export const NEON_MODELS: Model<"openai-completions">[] = [
 		name: "Llama-3.3-70B-Instruct",
 		reasoning: false,
 		input: ["text"],
-		context: 131_072,
+		context: 128_000,
 		output: 8192,
 		cost: { input: 0.5, output: 1.5, cacheRead: 0, cacheWrite: 0 },
 	}),
