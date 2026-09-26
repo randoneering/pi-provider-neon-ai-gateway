@@ -28,7 +28,8 @@
 		"build": "tsc -p tsconfig.json --noEmit",
 		"check": "tsc -p tsconfig.json --noEmit",
 		"test": "vitest run",
-		"test:smoke": "tsx test/smoke.ts"
+		"test:smoke": "tsx test/smoke.ts",
+		"update-models": "tsx scripts/update-models.ts"
 	},
 	"pi": {
 		"extensions": [

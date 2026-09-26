@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { NEON_MODELS, isKnownNeonModel } from "../src/models.js";
+import { canonicalModelId, MODEL_CAPABILITIES, NEON_MODELS, isKnownNeonModel } from "../src/models.js";
 
 describe("NEON_MODELS", () => {
 	it("has at least the foundation models shipped at launch", () => {
@@ -51,5 +51,28 @@ describe("isKnownNeonModel", () => {
 	it("returns false for unknown ids", () => {
 		expect(isKnownNeonModel("claude-3-5-sonnet")).toBe(false);
 		expect(isKnownNeonModel("")).toBe(false);
+	});
+});
+
+describe("MODEL_CAPABILITIES", () => {
+	it("covers every catalog model", () => {
+		for (const model of NEON_MODELS) {
+			const caps = MODEL_CAPABILITIES[canonicalModelId(model.id)];
+			expect(caps, model.id).toBeDefined();
+			expect(typeof caps?.temperature, model.id).toBe("boolean");
+			expect(typeof caps?.toolCall, model.id).toBe("boolean");
+		}
+	});
+
+	it("contains no embedding families", () => {
+		for (const model of NEON_MODELS) {
+			expect(model.id).not.toMatch(/embedding/i);
+		}
+	});
+
+	it("marks the temperature-less models the upstream contract names", () => {
+		for (const id of ["gpt-5", "gpt-5-mini", "gpt-5-nano", "gpt-5-5", "gpt-5-5-pro", "gpt-5-6-luna", "gpt-5-6-sol", "gpt-5-6-terra", "gpt-6-astra", "gemini-3-6-flash"]) {
+			expect(MODEL_CAPABILITIES[id]?.temperature, id).toBe(false);
+		}
 	});
 });

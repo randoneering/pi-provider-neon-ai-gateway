@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { enrichRateLimitMessage, transformNeonPayload } from "../src/stream.js";
+import { canonicalModelId, MODEL_CAPABILITIES, NEON_MODELS } from "../src/models.js";
 
 function withBase(payload: Record<string, unknown>): Record<string, unknown> {
 	return { model: "test", messages: [], ...payload };
@@ -135,6 +136,33 @@ describe("transformNeonPayload", () => {
 				"gpt-5-6-luna",
 			) as Record<string, unknown>;
 			expect(result.reasoning_effort).toBe("high");
+		});
+	});
+
+	describe("upstream metadata layer", () => {
+		it("strips temperature and top_p when upstream marks temperature unsupported", () => {
+			for (const id of ["gpt-5", "gpt-5-5-pro", "gpt-5-6-luna", "gpt-6-astra"]) {
+				const result = transformNeonPayload(
+					withBase({ temperature: 0.7, top_p: 0.9 }),
+					id,
+				) as Record<string, unknown>;
+				expect(result.temperature, id).toBeUndefined();
+				expect(result.top_p, id).toBeUndefined();
+			}
+		});
+
+		it("keeps temperature when upstream allows it", () => {
+			const result = transformNeonPayload(
+				withBase({ temperature: 0.7 }),
+				"gemini-3-1-flash-lite",
+			) as Record<string, unknown>;
+			expect(result.temperature).toBe(0.7);
+		});
+
+		it("covers every catalog id with capability metadata", () => {
+			for (const model of NEON_MODELS) {
+				expect(MODEL_CAPABILITIES[canonicalModelId(model.id)], model.id).toBeDefined();
+			}
 		});
 	});
 
