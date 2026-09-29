@@ -70,4 +70,15 @@ describe("buildModelsSource", () => {
 		expect(source).not.toContain("gte-large-en");
 		expect(source).toContain("gpt-5-6-luna");
 	});
+
+	it("excludes models that require the Responses endpoint", () => {
+		const source = buildModelsSource([
+			{ id: "gpt-5-3-codex", family: "gpt-5" },
+			{ id: "gpt-5-5-pro", family: "gpt-5" },
+			{ id: "gpt-5-5", family: "gpt-5" },
+		]);
+		expect(source).not.toContain("gpt-5-3-codex");
+		expect(source).not.toContain("gpt-5-5-pro");
+		expect(source).toContain('id: "gpt-5-5"');
+	});
 });

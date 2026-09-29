@@ -33,9 +33,11 @@ interface NeonModelInput {
 	cost: { input: number; output: number; cacheRead: number; cacheWrite: number };
 }
 
-/** pi-ai models are chat models; embedding families never enter the catalog. */
+const RESPONSES_ONLY_MODELS = new Set(["gpt-5-3-codex", "gpt-5-5-pro"]);
+
+/** Models supported by this Chat Completions provider, excluding embeddings and Responses-only ids. */
 export function isChatModel(model: UpstreamModel): boolean {
-	return !/embedding/i.test(model.family ?? "");
+	return !/embedding/i.test(model.family ?? "") && !RESPONSES_ONLY_MODELS.has(model.id.toLowerCase());
 }
 
 const PI_INPUT = new Set(["text", "image"]);
