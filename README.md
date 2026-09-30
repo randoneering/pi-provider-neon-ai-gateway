@@ -160,13 +160,15 @@ The active org is marked with `*` in the list output. The first time you run one
 /model
 ```
 
-Pick any `neon/<model-id>`. All 34 models show up in `pi --list-models`. Run `/neon-models` to see pricing for each model.
+Pick any `neon/<model-id>`. All 32 models show up in `pi --list-models`. Run `/neon-models` to see pricing for each model.
 
 ## Models
 
 Sourced from [neon.com/models.json](https://neon.com/models.json). The catalog and its per-model capability table are generated: run `npm run update-models` after upstream changes. The capability table (which models reject `temperature`, which support tools) drives the payload cleanup in `src/stream.ts`.
 
-- **OpenAI**: gpt-5, gpt-5-mini, gpt-5-nano, gpt-5-1, gpt-5-2, gpt-5-3-codex, gpt-5-4, gpt-5-4-mini, gpt-5-4-nano, gpt-5-5, gpt-5-5-pro, gpt-5-6-luna, gpt-5-6-sol, gpt-5-6-terra, gpt-6-astra, gpt-oss-120b, gpt-oss-20b
+This provider implements Chat Completions. Neon requires the Responses API for `gpt-5-3-codex` and `gpt-5-5-pro`, so the generator excludes them until this extension supports that endpoint ([Neon endpoint guidance](https://neon.com/docs/ai-gateway/models#which-endpoint-to-use)).
+
+- **OpenAI**: gpt-5, gpt-5-mini, gpt-5-nano, gpt-5-1, gpt-5-2, gpt-5-4, gpt-5-4-mini, gpt-5-4-nano, gpt-5-5, gpt-5-6-luna, gpt-5-6-sol, gpt-5-6-terra, gpt-6-astra, gpt-oss-120b, gpt-oss-20b
 - **Google**: gemini-3-1-flash-lite, gemini-3-1-pro, gemini-3-5-flash, gemini-3-5-flash-lite, gemini-3-6-flash, gemini-3-flash, gemma-3-12b
 - **Meta**: llama-4-maverick, meta-llama-3-1-8b-instruct, meta-llama-3-3-70b-instruct
 - **xAI**: grok-4-6

@@ -141,7 +141,7 @@ describe("transformNeonPayload", () => {
 
 	describe("upstream metadata layer", () => {
 		it("strips temperature and top_p when upstream marks temperature unsupported", () => {
-			for (const id of ["gpt-5", "gpt-5-5-pro", "gpt-5-6-luna", "gpt-6-astra"]) {
+			for (const id of ["gpt-5", "gpt-5-6-luna", "gpt-6-astra"]) {
 				const result = transformNeonPayload(
 					withBase({ temperature: 0.7, top_p: 0.9 }),
 					id,

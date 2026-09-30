@@ -5,6 +5,7 @@ import {
 	formatNeonModelCatalog,
 	registerNeonModelCostCommand,
 } from "../src/model-cost.js";
+import { NEON_MODELS } from "../src/models.js";
 
 describe("formatModelCost", () => {
 	it("formats input, output, and zero cache pricing", () => {
@@ -50,7 +51,7 @@ describe("formatNeonModelCatalog", () => {
 		expect(catalog).toContain("Neon models:");
 		expect(catalog).toContain("gpt-5-mini");
 		expect(catalog).toContain("$0.25 / 1M");
-		expect(catalog.split("\n").filter((line) => line.startsWith("  ")).length).toBeGreaterThanOrEqual(34);
+		expect(catalog.split("\n").filter((line) => line.startsWith("  ") && !line.startsWith("  Use ")).length).toBe(NEON_MODELS.length);
 	});
 });
 
