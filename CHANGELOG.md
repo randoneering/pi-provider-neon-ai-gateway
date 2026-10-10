@@ -2,6 +2,16 @@
 
 All notable changes to `pi-provider-neon-ai-gateway` are documented here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Added
+
+- 13 new Claude chat models from `https://neon.com/models.json`: `claude-fable-5`, `claude-fable-5-1`, `claude-haiku-4-5`, `claude-sonnet-4-5`, `claude-sonnet-4-6`, `claude-sonnet-5`, `claude-opus-4-1`, `claude-opus-4-5`, `claude-opus-4-6`, `claude-opus-4-7`, `claude-opus-4-8`, `claude-opus-5`, `claude-opus-5-5`. Regenerate the catalog with `npm run update-models`.
+
+### Fixed
+
+- `claude-opus-5-5` returned an empty string when it reasoned. The Neon gateway sends `message.content` as a list of `reasoning` and `text` blocks; pi-ai's openai-completions parser expects a string. The streaming normalizer flattens the list into the `content` plus `reasoning_content` shape the `gpt-oss` harmony adapter uses.
+
 ## v0.3.0 - 2026-09-23
 
 ### Added

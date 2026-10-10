@@ -8,9 +8,10 @@
  * - Removes sampling params (frequency_penalty, presence_penalty, seed,
  *   temperature, top_p, ...) per model family, since each upstream rejects
  *   a different set.
- * - Translates GPT-OSS "harmony" content arrays into the flat
- *   `content` + `reasoning_content` shape that the OpenAI Chat Completions
- *   parser expects, so reasoning shows up in pi's thinking block.
+ * - Flattens typed content-block arrays (gpt-oss harmony, claude-opus-5-5
+ *   reasoning blocks) into the `content` + `reasoning_content` shape that
+ *   pi-ai's openai-completions parser expects, so reasoning shows up in
+ *   pi's thinking block.
  * - Wraps Neon's flat error responses in the nested `{ error: { message } }`
  *   shape expected by pi's overflow detector and error handling.
  */
@@ -113,10 +114,46 @@ export function transformNeonPayload(value: unknown, modelId: string): unknown {
 }
 
 // ---------------------------------------------------------------------------
-// Response normalization (GPT-OSS harmony format)
+// Response normalization (typed content blocks)
 // ---------------------------------------------------------------------------
 
-function extractHarmonyContent(content: unknown): { text: string; reasoning: string } | undefined {
+/**
+ * Canonical model ids whose chat-completions responses carry `message.content`
+ * as a list of typed content blocks rather than a plain string. The list
+ * grows when the upstream docs call out a new model. The `gpt-oss` family
+ * is matched by prefix in `isArrayContentModel` because all its members
+ * use harmony.
+ */
+const ARRAY_CONTENT_MODEL_IDS = new Set(["claude-opus-5-5"]);
+
+/**
+ * Whether the given canonical model id returns typed content blocks on
+ * `choice.delta.content` instead of a string. Exported so the predicate
+ * can be tested without spinning up the full stream.
+ */
+export function isArrayContentModel(canonicalId: string): boolean {
+	return canonicalId.includes("gpt-oss") || ARRAY_CONTENT_MODEL_IDS.has(canonicalId);
+}
+
+/**
+ * Flatten a model-specific content array into the (text, reasoning) pair
+ * that pi-ai's openai-completions parser expects on `choice.delta.content`
+ * and `choice.delta.reasoning_content`.
+ *
+ * Two upstream shapes trigger this:
+ *
+ * - gpt-oss "harmony" responses use
+ *   `{ type: 'text', text }` and
+ *   `{ type: 'reasoning', text, summary?, content? }`.
+ * - `claude-opus-5-5` returns
+ *   `{ type: 'text', text }` and `{ type: 'reasoning', text }` once the
+ *   model reasons. A trivial prompt still returns a string from the
+ *   upstream and falls through this function unchanged.
+ *
+ * Returns undefined when the content is not an array of typed blocks so
+ * the caller can pass string content through without modification.
+ */
+export function extractArrayContent(content: unknown): { text: string; reasoning: string } | undefined {
 	if (!Array.isArray(content)) return undefined;
 	const text: string[] = [];
 	const reasoning: string[] = [];
@@ -144,7 +181,7 @@ function normalizeChunk(value: unknown): { body: unknown; changed: boolean } {
 	let changed = false;
 	for (const choice of value.choices) {
 		if (!isRecord(choice) || !isRecord(choice.delta)) continue;
-		const extracted = extractHarmonyContent(choice.delta.content);
+		const extracted = extractArrayContent(choice.delta.content);
 		if (!extracted) continue;
 		changed = true;
 		choice.delta.content = extracted.text || undefined;
@@ -251,12 +288,12 @@ export function enrichRateLimitMessage(body: unknown, retryAfterHeader: string |
 	};
 }
 
-function makeNeonFetch(baseFetch: FetchFunction | undefined, isHarmonyModel: boolean): FetchFunction {
+function makeNeonFetch(baseFetch: FetchFunction | undefined, isArrayContentModel: boolean): FetchFunction {
 	const request = baseFetch ?? globalThis.fetch;
 	return async (input, init) => {
 		const response = await request(input, init);
 		const contentType = response.headers.get("content-type") ?? "";
-		if (response.ok && response.body && isHarmonyModel && contentType.includes("text/event-stream")) {
+		if (response.ok && response.body && isArrayContentModel && contentType.includes("text/event-stream")) {
 			return new Response(normalizeEventStream(response.body), {
 				status: response.status,
 				statusText: response.statusText,
@@ -352,12 +389,12 @@ export function streamNeon(model: Model<Api>, context: Context, options?: Simple
 
 	const resolvedModel: Model<NeonApi> =
 		model.baseUrl === baseUrl ? (model as Model<NeonApi>) : ({ ...model, baseUrl } as Model<NeonApi>);
-	const isHarmonyModel = canonicalModelId(model.id).includes("gpt-oss");
+	const useArrayContent = isArrayContentModel(canonicalModelId(model.id));
 
 	const userOnPayload = options?.onPayload;
 	const wrappedOptions: SimpleStreamOptions = {
 		...options,
-		fetch: makeNeonFetch(options?.fetch, isHarmonyModel),
+		fetch: makeNeonFetch(options?.fetch, useArrayContent),
 		onPayload: async (payload, m) => {
 			const transformed = transformNeonPayload(payload, m.id);
 			if (!userOnPayload) return transformed;
