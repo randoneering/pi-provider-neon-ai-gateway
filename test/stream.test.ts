@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { enrichRateLimitMessage, transformNeonPayload } from "../src/stream.js";
+import { enrichRateLimitMessage, extractArrayContent, isArrayContentModel, transformNeonPayload } from "../src/stream.js";
 import { canonicalModelId, MODEL_CAPABILITIES, NEON_MODELS } from "../src/models.js";
 
 function withBase(payload: Record<string, unknown>): Record<string, unknown> {
@@ -324,5 +324,91 @@ describe("enrichRateLimitMessage", () => {
 		const original = { message: "server error" };
 		expect(enrichRateLimitMessage(original, "47")).toBe(original);
 		expect(enrichRateLimitMessage({ error: "server error" }, "47")).toEqual({ error: "server error" });
+	});
+});
+
+describe("extractArrayContent", () => {
+	it("returns undefined for non-array content", () => {
+		expect(extractArrayContent("plain string")).toBeUndefined();
+		expect(extractArrayContent({ type: "text", text: "nope" })).toBeUndefined();
+		expect(extractArrayContent(null)).toBeUndefined();
+		expect(extractArrayContent(undefined)).toBeUndefined();
+	});
+
+	it("flattens a text-only Anthropic-style block", () => {
+		expect(
+			extractArrayContent([{ type: "text", text: "hello" }]),
+		).toEqual({ text: "hello", reasoning: "" });
+	});
+
+	it("flattens a reasoning-only block when max_tokens cuts off text", () => {
+		expect(
+			extractArrayContent([{ type: "reasoning", text: "let me think" }]),
+		).toEqual({ text: "", reasoning: "let me think" });
+	});
+
+	it("flattens a mixed text and reasoning block in upstream order", () => {
+		const blocks = [
+			{ type: "reasoning", text: "step one" },
+			{ type: "text", text: "answer " },
+			{ type: "reasoning", text: "step two" },
+			{ type: "text", text: "continues" },
+		];
+		expect(extractArrayContent(blocks)).toEqual({ text: "answer continues", reasoning: "step one\nstep two" });
+	});
+
+	it("skips blocks without a string text field", () => {
+		expect(
+			extractArrayContent([
+				{ type: "text" },
+				{ type: "text", text: 42 },
+				{ type: "text", text: "kept" },
+			]),
+		).toEqual({ text: "kept", reasoning: "" });
+	});
+
+	it("skips unknown block types without dropping the rest", () => {
+		expect(
+			extractArrayContent([
+				{ type: "tool_use", id: "x" },
+				{ type: "text", text: "answer" },
+			]),
+		).toEqual({ text: "answer", reasoning: "" });
+	});
+
+	it("joins gpt-oss harmony summary and content arrays as reasoning", () => {
+		const blocks = [
+			{ type: "reasoning", text: "top", summary: [{ text: "sum1" }, { text: "sum2" }] },
+			{ type: "reasoning", text: "more", content: [{ text: "deep" }] },
+			{ type: "text", text: "final" },
+		];
+		expect(extractArrayContent(blocks)).toEqual({
+			text: "final",
+			reasoning: "top\nsum1\nsum2\nmore\ndeep",
+		});
+	});
+});
+
+describe("isArrayContentModel", () => {
+	it("matches the gpt-oss family by prefix", () => {
+		expect(isArrayContentModel("gpt-oss-120b")).toBe(true);
+		expect(isArrayContentModel("gpt-oss-20b")).toBe(true);
+	});
+
+	it("matches claude-opus-5-5 explicitly", () => {
+		expect(isArrayContentModel("claude-opus-5-5")).toBe(true);
+	});
+
+	it("leaves other Claude models on the string path", () => {
+		expect(isArrayContentModel("claude-opus-5")).toBe(false);
+		expect(isArrayContentModel("claude-opus-4-8")).toBe(false);
+		expect(isArrayContentModel("claude-sonnet-4-6")).toBe(false);
+		expect(isArrayContentModel("claude-fable-5-1")).toBe(false);
+	});
+
+	it("returns false for non-array-content models", () => {
+		expect(isArrayContentModel("gpt-5")).toBe(false);
+		expect(isArrayContentModel("gemini-3-6-flash")).toBe(false);
+		expect(isArrayContentModel("llama-4-maverick")).toBe(false);
 	});
 });

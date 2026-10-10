@@ -71,7 +71,24 @@ describe("MODEL_CAPABILITIES", () => {
 	});
 
 	it("marks the temperature-less models the upstream contract names", () => {
-		for (const id of ["gpt-5", "gpt-5-mini", "gpt-5-nano", "gpt-5-5", "gpt-5-6-luna", "gpt-5-6-sol", "gpt-5-6-terra", "gpt-6-astra", "gemini-3-6-flash"]) {
+		for (const id of [
+			"gpt-5",
+			"gpt-5-mini",
+			"gpt-5-nano",
+			"gpt-5-5",
+			"gpt-5-6-luna",
+			"gpt-5-6-sol",
+			"gpt-5-6-terra",
+			"gpt-6-astra",
+			"gemini-3-6-flash",
+			"claude-fable-5",
+			"claude-fable-5-1",
+			"claude-opus-4-7",
+			"claude-opus-4-8",
+			"claude-opus-5",
+			"claude-opus-5-5",
+			"claude-sonnet-5",
+		]) {
 			expect(MODEL_CAPABILITIES[id]?.temperature, id).toBe(false);
 		}
 	});
