@@ -22,11 +22,11 @@ import { registerNeonAccountCommands, registerNeonSpendingLimitCommand } from ".
 import { registerNeonAlertHooks } from "./alerts.js";
 import { registerNeonAuthCommands } from "./auth.js";
 import { NEON_AI_GATEWAY_BASE_URL_ENV, NEON_AI_GATEWAY_TOKEN_ENV } from "./config.js";
-import { NEON_MODELS } from "./models.js";
+import { ANTHROPIC_MODELS, NEON_MODELS } from "./models.js";
 import { registerNeonModelCostCommand } from "./model-cost.js";
 import { registerNeonOrgCommand } from "./orgs.js";
 import { registerNeonRateLimitHook } from "./ratelimit.js";
-import { streamNeon } from "./stream.js";
+import { streamNeon, streamNeonAnthropic } from "./stream.js";
 
 export default function (pi: ExtensionAPI): void {
 	pi.registerProvider("neon", {
@@ -37,6 +37,16 @@ export default function (pi: ExtensionAPI): void {
 		api: "openai-completions",
 		models: NEON_MODELS,
 		streamSimple: streamNeon,
+	});
+
+	pi.registerProvider("neon-anthropic", {
+		name: "Neon AI Gateway (Anthropic)",
+		baseUrl: `\${${NEON_AI_GATEWAY_BASE_URL_ENV}}/anthropic`,
+		apiKey: `$${NEON_AI_GATEWAY_TOKEN_ENV}`,
+		authHeader: true,
+		api: "anthropic-messages",
+		models: ANTHROPIC_MODELS,
+		streamSimple: streamNeonAnthropic,
 	});
 
 	registerNeonAuthCommands(pi);

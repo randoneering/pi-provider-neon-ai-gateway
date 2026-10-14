@@ -507,3 +507,39 @@ export function canonicalModelId(id: string): string {
 export function isKnownNeonModel(id: string): boolean {
 	return MODEL_IDS.has(canonicalModelId(id));
 }
+
+/**
+ * Canonical model ids exposed on the `/anthropic/v1/messages` endpoint.
+ * The list mirrors the upstream `https://neon.com/docs/ai-gateway/anthropic-messages`
+ * "Supported models" table. Update it when a new Claude model lands in
+ * the catalog and the docs page calls it out.
+ */
+export const ANTHROPIC_MODEL_IDS: ReadonlySet<string> = new Set([
+	"claude-fable-5",
+	"claude-fable-5-1",
+	"claude-haiku-4-5",
+	"claude-opus-4-1",
+	"claude-opus-4-5",
+	"claude-opus-4-6",
+	"claude-opus-4-7",
+	"claude-opus-4-8",
+	"claude-opus-5",
+	"claude-opus-5-5",
+	"claude-sonnet-4-5",
+	"claude-sonnet-4-6",
+	"claude-sonnet-5",
+]);
+
+/**
+ * Anthropic Messages catalog derived from `NEON_MODELS` so the two
+ * providers share pricing, context windows, and capability metadata.
+ * Each entry points at the `anthropic-messages` api and the
+ * `neon-anthropic` provider so pi routes it to the right `streamSimple`.
+ */
+export const ANTHROPIC_MODELS: Model<"anthropic-messages">[] = NEON_MODELS.filter((model) =>
+	ANTHROPIC_MODEL_IDS.has(canonicalModelId(model.id)),
+).map((model) => ({
+	...model,
+	api: "anthropic-messages" as const,
+	provider: "neon-anthropic",
+}));

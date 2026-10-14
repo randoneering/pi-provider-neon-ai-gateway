@@ -7,6 +7,7 @@ All notable changes to `pi-provider-neon-ai-gateway` are documented here. Versio
 ### Added
 
 - 13 new Claude chat models from `https://neon.com/models.json`: `claude-fable-5`, `claude-fable-5-1`, `claude-haiku-4-5`, `claude-sonnet-4-5`, `claude-sonnet-4-6`, `claude-sonnet-5`, `claude-opus-4-1`, `claude-opus-4-5`, `claude-opus-4-6`, `claude-opus-4-7`, `claude-opus-4-8`, `claude-opus-5`, `claude-opus-5-5`. Regenerate the catalog with `npm run update-models`.
+- `neon-anthropic` provider exposes the same 13 Claude models on the `/anthropic/v1/messages` endpoint. Use it from the `/model` picker to get extended thinking (`thinking` with `budget_tokens`) and prompt caching (`cache_control` on content blocks), neither of which chat completions can forward. Reuses the same `NEON_AI_GATEWAY_TOKEN` and branch URL; pricing and capability metadata are shared with the chat catalog.
 
 ### Fixed
 

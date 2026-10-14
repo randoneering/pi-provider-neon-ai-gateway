@@ -165,3 +165,35 @@ describe("resolveNeonBaseUrl", () => {
 		expect(result).toBe("https://from-process.ai.neon.tech/v1");
 	});
 });
+
+describe("resolveNeonAnthropicBaseUrl", () => {
+	it("prefers credential env over process env", async () => {
+		const { resolveNeonAnthropicBaseUrl } = await import("../src/config.js");
+		const result = resolveNeonAnthropicBaseUrl({
+			processEnv: { NEON_AI_GATEWAY_BASE_URL: "https://from-process.ai.neon.tech" },
+			credentialEnv: { NEON_AI_GATEWAY_BASE_URL: "https://from-cred.ai.neon.tech" },
+		});
+		expect(result).toBe("https://from-cred.ai.neon.tech/anthropic");
+	});
+
+	it("returns undefined when no source provides a value", async () => {
+		const { resolveNeonAnthropicBaseUrl } = await import("../src/config.js");
+		expect(resolveNeonAnthropicBaseUrl({ processEnv: {} })).toBeUndefined();
+	});
+
+	it("strips a user-supplied /anthropic so the suffix is not doubled", async () => {
+		const { resolveNeonAnthropicBaseUrl } = await import("../src/config.js");
+		const result = resolveNeonAnthropicBaseUrl({
+			processEnv: { NEON_AI_GATEWAY_BASE_URL: "https://from-process.ai.neon.tech/anthropic/" },
+		});
+		expect(result).toBe("https://from-process.ai.neon.tech/anthropic");
+	});
+
+	it("normalizes a trailing /v1 the same way the chat resolver does", async () => {
+		const { resolveNeonAnthropicBaseUrl } = await import("../src/config.js");
+		const result = resolveNeonAnthropicBaseUrl({
+			processEnv: { NEON_AI_GATEWAY_BASE_URL: "https://from-process.ai.neon.tech/v1" },
+		});
+		expect(result).toBe("https://from-process.ai.neon.tech/anthropic");
+	});
+});

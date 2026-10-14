@@ -54,12 +54,36 @@ export interface ResolveOptions {
  * Returns undefined when neither is set.
  */
 export function resolveNeonBaseUrl(options: ResolveOptions = {}): string | undefined {
+	return resolveNeonBaseUrlWithPath(options, "/v1");
+}
+
+/**
+ * Resolve the effective Neon base URL, ready for the Anthropic Messages
+ * endpoint at `<base>/anthropic/v1/messages`.
+ *
+ * Same precedence as `resolveNeonBaseUrl`. Strips a trailing `/anthropic`
+ * so a user-supplied base URL like `https://branch.example/anthropic`
+ * resolves to `https://branch.example/anthropic` rather than
+ * `https://branch.example/anthropic/anthropic`.
+ */
+export function resolveNeonAnthropicBaseUrl(options: ResolveOptions = {}): string | undefined {
+	return resolveNeonBaseUrlWithPath(options, "/anthropic");
+}
+
+function resolveNeonBaseUrlWithPath(options: ResolveOptions, path: string): string | undefined {
 	const fromCredential = options.credentialEnv?.[NEON_AI_GATEWAY_BASE_URL_ENV];
 	const fromProcess = options.processEnv?.[NEON_AI_GATEWAY_BASE_URL_ENV];
 	const raw = fromCredential || fromProcess;
 	if (!raw) return undefined;
-	const normalized = normalizeNeonBaseUrl(raw);
-	return `${normalized}/v1`;
+	const normalized = normalizeNeonBaseUrl(raw).replace(
+		new RegExp(`${escapeRegExp(path)}$`, "u"),
+		"",
+	);
+	return `${normalized}${path}`;
+}
+
+function escapeRegExp(value: string): string {
+	return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 }
 
 export interface ResolveManagementKeyOptions {
