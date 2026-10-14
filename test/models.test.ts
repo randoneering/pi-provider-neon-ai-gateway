@@ -100,6 +100,7 @@ describe("ANTHROPIC_MODELS", () => {
 			"claude-fable-5",
 			"claude-fable-5-1",
 			"claude-haiku-4-5",
+			"claude-haiku-5-5",
 			"claude-opus-4-1",
 			"claude-opus-4-5",
 			"claude-opus-4-6",
@@ -110,6 +111,7 @@ describe("ANTHROPIC_MODELS", () => {
 			"claude-sonnet-4-5",
 			"claude-sonnet-4-6",
 			"claude-sonnet-5",
+			"claude-sonnet-5-5",
 		];
 		expect(ANTHROPIC_MODELS.map((m) => m.id).sort()).toEqual([...expected].sort());
 	});

@@ -8,10 +8,24 @@ All notable changes to `pi-provider-neon-ai-gateway` are documented here. Versio
 
 - 13 new Claude chat models from `https://neon.com/models.json`: `claude-fable-5`, `claude-fable-5-1`, `claude-haiku-4-5`, `claude-sonnet-4-5`, `claude-sonnet-4-6`, `claude-sonnet-5`, `claude-opus-4-1`, `claude-opus-4-5`, `claude-opus-4-6`, `claude-opus-4-7`, `claude-opus-4-8`, `claude-opus-5`, `claude-opus-5-5`. Regenerate the catalog with `npm run update-models`.
 - `neon-anthropic` provider exposes the same 13 Claude models on the `/anthropic/v1/messages` endpoint. Use it from the `/model` picker to get extended thinking (`thinking` with `budget_tokens`) and prompt caching (`cache_control` on content blocks), neither of which chat completions can forward. Reuses the same `NEON_AI_GATEWAY_TOKEN` and branch URL; pricing and capability metadata are shared with the chat catalog.
+- 10 more chat models from `https://neon.com/models.json`: `claude-haiku-5-5`, `claude-sonnet-5-5`, `deepseek-v4-1-flash`, `gemini-3-7-flash`, `gemini-3-8-flash`, `glm-5-3`, `gpt-6-1-sol`, `gpt-6-luna`, `gpt-6-sol`, `grok-4-7`. Regenerate the catalog with `npm run update-models`.
+- `neon-anthropic` provider now also covers `claude-haiku-5-5` and `claude-sonnet-5-5`. The set is hardcoded in `scripts/update-models.ts` and reconciled with the upstream Anthropic Messages docs.
+- `npm run test:smoke` now picks the provider from the model id. `claude-*` models route to the `anthropic-messages` flow; everything else keeps the `openai-completions` flow. Run a model from the Anthropic catalog with the same env vars to exercise the new provider.
+
+### Changed
+
+- `scripts/update-models.ts` owns the `ANTHROPIC_MODEL_IDS` set and emits the `ANTHROPIC_MODELS` array in the generated `src/models.ts`. The next regen no longer drops the anthropic catalog.
 
 ### Fixed
 
 - `claude-opus-5-5` returned an empty string when it reasoned. The Neon gateway sends `message.content` as a list of `reasoning` and `text` blocks; pi-ai's openai-completions parser expects a string. The streaming normalizer flattens the list into the `content` plus `reasoning_content` shape the `gpt-oss` harmony adapter uses.
+- `gemini-3-7-flash` and `gemini-3-8-flash` no longer send `frequency_penalty` and `presence_penalty` to the gateway. The two Gemini branches in `transformNeonPayload` collapsed into one `/^gemini-3-/u` regex so every Gemini 3 model inherits the same penalty stripping, with a regression test that loops the catalog.
+
+### Notes
+
+- `gpt-6-luna` does not need the `gpt-5-6-luna` `reasoning_effort: "none"` workaround. The upstream catalog lists `reasoning_options.values` for `gpt-6-luna` as `["low", "medium", "high", "xhigh", "max"]` (no `"none"`), so the existing fix would be rejected. The default "unknown model" path is correct.
+- All `gemini-3-*` models on the chat completions provider return 400 with `Unknown name "stream_options" at 'generation_config'`. The pre-existing gateway translation does not strip `stream_options` before forwarding to the Gemini upstream, and the new Gemini 3.6/3.7/3.8 models validate the request body strictly. This is a Neon gateway issue, not an extension issue, and affects the existing `gemini-3-6-flash` the same way as the new arrivals. The chat completions path cannot talk to any Gemini model today.
+- The new Claude 5.5 family (`claude-sonnet-5-5`, `claude-haiku-5-5`, `claude-opus-5-5`) on the `anthropic-messages` provider returns 400 because pi-ai's anthropic-messages implementation sends `thinking: {"type": "disabled"}` by default, and these models only accept `between_tools` or `adaptive` with `output_config.effort`. Use the chat completions provider (`/model` picker, `neon` provider) for these models until pi-ai is updated. The older Claude 4.5/4.6/4.7/4.8 models on the anthropic provider still work.
 
 ## v0.3.0 - 2026-09-23
 
