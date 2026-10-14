@@ -198,6 +198,29 @@ describe("transformNeonPayload", () => {
 			expect(result.temperature).toBe(0.7);
 			expect(result.top_p).toBe(0.9);
 		});
+
+		it("removes penalties for the gemini-3-7 and gemini-3-8 flash variants", () => {
+			for (const id of ["gemini-3-7-flash", "gemini-3-8-flash"]) {
+				const result = transformNeonPayload(
+					withBase({ frequency_penalty: 0.5, presence_penalty: 0.5 }),
+					id,
+				) as Record<string, unknown>;
+				expect(result.frequency_penalty, id).toBeUndefined();
+				expect(result.presence_penalty, id).toBeUndefined();
+			}
+		});
+
+		it("covers every gemini-3 chat model in the catalog", () => {
+			for (const model of NEON_MODELS) {
+				if (!/^gemini-3-/u.test(model.id)) continue;
+				const result = transformNeonPayload(
+					withBase({ frequency_penalty: 0.5, presence_penalty: 0.5 }),
+					model.id,
+				) as Record<string, unknown>;
+				expect(result.frequency_penalty, model.id).toBeUndefined();
+				expect(result.presence_penalty, model.id).toBeUndefined();
+			}
+		});
 	});
 
 	describe("GPT-OSS family", () => {

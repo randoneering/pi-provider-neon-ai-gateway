@@ -87,17 +87,10 @@ export function transformNeonPayload(value: unknown, modelId: string): unknown {
 			version !== null && (Number(version[1]) < 4 || (Number(version[1]) === 4 && Number(version[2] ?? 0) <= 6));
 		if (!acceptsSampling) removeKeys(payload, ["temperature", "top_p"]);
 		else if (payload.temperature !== undefined) delete payload.top_p;
-	} else if (id === "gemini-3-6-flash") {
-		// temperature/top_p come from the metadata layer above; gemini still
-		// rejects penalties per observed gateway behavior.
-		removeKeys(payload, ["frequency_penalty", "presence_penalty"]);
-	} else if (
-		id === "gemini-3-1-flash-lite" ||
-		id === "gemini-3-1-pro" ||
-		id === "gemini-3-5-flash" ||
-		id === "gemini-3-5-flash-lite" ||
-		id === "gemini-3-flash"
-	) {
+	} else if (/^gemini-3-/u.test(id)) {
+		// gemini-3 rejects frequency_penalty and presence_penalty outright.
+		// temperature/top_p are handled by the metadata layer above when
+		// the upstream marks the model as not supporting them.
 		removeKeys(payload, ["frequency_penalty", "presence_penalty"]);
 	} else if (id.includes("llama")) {
 		removeKeys(payload, ["frequency_penalty", "presence_penalty", "seed"]);
