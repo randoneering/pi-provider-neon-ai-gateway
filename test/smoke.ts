@@ -8,13 +8,17 @@
  *   # with thinking:
  *   npm run test:smoke gpt-5-mini --thinking
  *
+ * Models in the Anthropic Messages catalog (claude-*) route to the
+ * neon-anthropic provider; everything else routes to the chat completions
+ * provider.
+ *
  * Exits non-zero on any error event or empty response so CI can detect
  * regressions even when run with a valid credential.
  */
 
-import { registerApiProvider, streamSimple } from "@earendil-works/pi-ai/compat";
+import { anthropicMessagesApi, registerApiProvider, streamSimple } from "@earendil-works/pi-ai/compat";
 import type { Api, Context, Model } from "@earendil-works/pi-ai/compat";
-import { isKnownNeonModel, NEON_MODELS } from "../src/models.js";
+import { ANTHROPIC_MODELS, isKnownNeonModel, NEON_MODELS } from "../src/models.js";
 import { streamNeon } from "../src/stream.js";
 
 function readCredential(): { token: string; baseUrl: string } {
@@ -36,30 +40,46 @@ async function main(): Promise<void> {
 
 	if (!isKnownNeonModel(modelId)) {
 		console.error(`Unknown model: ${modelId}`);
-		console.error("Available:", NEON_MODELS.map((m) => m.id).join(", "));
+		console.error("Chat:", NEON_MODELS.map((m) => m.id).join(", "));
+		console.error("Anthropic:", ANTHROPIC_MODELS.map((m) => m.id).join(", "));
 		process.exit(2);
 	}
 
-	const cfg = NEON_MODELS.find((m) => m.id === modelId);
-	if (!cfg) {
+	const chatCfg = NEON_MODELS.find((m) => m.id === modelId);
+	const anthropicCfg = ANTHROPIC_MODELS.find((m) => m.id === modelId);
+	if (!chatCfg) {
 		console.error(`Model metadata missing for ${modelId}`);
 		process.exit(2);
 	}
 
 	const { token, baseUrl } = readCredential();
+	const normalizedBase = baseUrl.replace(/\/$/, "");
 
-	registerApiProvider({
-		api: "openai-completions" as Api,
-		stream: streamNeon,
-		streamSimple: streamNeon,
-	});
+	let model: Model<Api>;
+	let apiLabel: string;
 
-	const model: Model<Api> = {
-		...cfg,
-		api: "openai-completions" as Api,
-		provider: "neon",
-		baseUrl: `${baseUrl.replace(/\/$/, "")}/v1`,
-	};
+	if (anthropicCfg) {
+		model = {
+			...chatCfg,
+			api: "anthropic-messages" as Api,
+			provider: "neon-anthropic",
+			baseUrl: `${normalizedBase}/anthropic`,
+		};
+		apiLabel = "anthropic-messages";
+	} else {
+		registerApiProvider({
+			api: "openai-completions" as Api,
+			stream: streamNeon,
+			streamSimple: streamNeon,
+		});
+		model = {
+			...chatCfg,
+			api: "openai-completions" as Api,
+			provider: "neon",
+			baseUrl: `${normalizedBase}/v1`,
+		};
+		apiLabel = "openai-completions";
+	}
 
 	const context: Context = {
 		messages: [
@@ -71,13 +91,21 @@ async function main(): Promise<void> {
 		],
 	};
 
-	console.log(`Model: ${model.id}, baseUrl: ${model.baseUrl}, thinking: ${useThinking}`);
+	console.log(`Model: ${model.id}, api: ${apiLabel}, baseUrl: ${model.baseUrl}, thinking: ${useThinking}`);
 
-	const stream = streamSimple(model, context, {
+	const streamOptions = {
 		apiKey: token,
 		maxTokens: 64,
-		reasoning: useThinking ? "low" : undefined,
-	});
+		reasoning: useThinking ? ("low" as const) : undefined,
+	};
+	const stream =
+		apiLabel === "anthropic-messages"
+			? anthropicMessagesApi().streamSimple(
+					model as Model<"anthropic-messages">,
+					context,
+					streamOptions,
+				)
+			: streamSimple(model, context, streamOptions);
 
 	let sawText = false;
 	for await (const event of stream) {
