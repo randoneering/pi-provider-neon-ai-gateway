@@ -17,6 +17,7 @@
  */
 
 import {
+	anthropicMessagesApi,
 	createAssistantMessageEventStream,
 	openAICompletionsApi,
 } from "@earendil-works/pi-ai/compat";
@@ -29,7 +30,11 @@ import type {
 	Model,
 	SimpleStreamOptions,
 } from "@earendil-works/pi-ai/compat";
-import { NEON_AI_GATEWAY_BASE_URL_ENV, resolveNeonBaseUrl } from "./config.js";
+import {
+	NEON_AI_GATEWAY_BASE_URL_ENV,
+	resolveNeonAnthropicBaseUrl,
+	resolveNeonBaseUrl,
+} from "./config.js";
 import { canonicalModelId, MODEL_CAPABILITIES } from "./models.js";
 
 type NeonApi = "openai-completions";
@@ -334,7 +339,7 @@ function makeNeonFetch(baseFetch: FetchFunction | undefined, isArrayContentModel
 // ---------------------------------------------------------------------------
 
 function missingBaseUrlStream(
-	model: Model<NeonApi>,
+	model: Model<Api>,
 	errorMessage?: string,
 ): AssistantMessageEventStream {
 	const stream = createAssistantMessageEventStream();
@@ -381,10 +386,10 @@ export function streamNeon(model: Model<Api>, context: Context, options?: Simple
 			credentialEnv: options?.env,
 		});
 	} catch (error) {
-		return missingBaseUrlStream(model as Model<NeonApi>, (error as Error).message);
+		return missingBaseUrlStream(model, (error as Error).message);
 	}
 	if (!baseUrl) {
-		return missingBaseUrlStream(model as Model<NeonApi>);
+		return missingBaseUrlStream(model);
 	}
 
 	const resolvedModel: Model<NeonApi> =
@@ -404,4 +409,42 @@ export function streamNeon(model: Model<Api>, context: Context, options?: Simple
 	};
 
 	return openAICompletionsApi().streamSimple(resolvedModel, context, wrappedOptions);
+}
+
+/**
+ * Stream adapter for the `/anthropic/v1/messages` endpoint.
+ *
+ * The Anthropic SDK handles request shape, response shape, and SSE
+ * parsing, so this wrapper only resolves the effective base URL and
+ * delegates to `pi-ai`'s built-in `anthropicMessagesApi` stream. Per-model
+ * field stripping is unnecessary because the SDK forwards the Claude
+ * options (extended thinking, prompt caching, tool choice) directly.
+ */
+export function streamNeonAnthropic(
+	model: Model<Api>,
+	context: Context,
+	options?: SimpleStreamOptions,
+): AssistantMessageEventStream {
+	if (model.api !== "anthropic-messages") {
+		throw new Error(`streamNeonAnthropic expects anthropic-messages, got ${model.api}`);
+	}
+	let baseUrl: string | undefined;
+	try {
+		baseUrl = resolveNeonAnthropicBaseUrl({
+			processEnv: process.env as Record<string, string | undefined>,
+			credentialEnv: options?.env,
+		});
+	} catch (error) {
+		return missingBaseUrlStream(model, (error as Error).message);
+	}
+	if (!baseUrl) {
+		return missingBaseUrlStream(model);
+	}
+
+	const resolvedModel: Model<"anthropic-messages"> =
+		model.baseUrl === baseUrl
+			? (model as Model<"anthropic-messages">)
+			: ({ ...model, baseUrl } as Model<"anthropic-messages">);
+
+	return anthropicMessagesApi().streamSimple(resolvedModel, context, options);
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canonicalModelId, MODEL_CAPABILITIES, NEON_MODELS, isKnownNeonModel } from "../src/models.js";
+import { ANTHROPIC_MODELS, canonicalModelId, MODEL_CAPABILITIES, NEON_MODELS, isKnownNeonModel } from "../src/models.js";
 
 describe("NEON_MODELS", () => {
 	it("has at least the foundation models shipped at launch", () => {
@@ -93,3 +93,52 @@ describe("MODEL_CAPABILITIES", () => {
 		}
 	});
 });
+
+describe("ANTHROPIC_MODELS", () => {
+	it("covers the upstream Anthropic Messages supported list", () => {
+		const expected = [
+			"claude-fable-5",
+			"claude-fable-5-1",
+			"claude-haiku-4-5",
+			"claude-opus-4-1",
+			"claude-opus-4-5",
+			"claude-opus-4-6",
+			"claude-opus-4-7",
+			"claude-opus-4-8",
+			"claude-opus-5",
+			"claude-opus-5-5",
+			"claude-sonnet-4-5",
+			"claude-sonnet-4-6",
+			"claude-sonnet-5",
+		];
+		expect(ANTHROPIC_MODELS.map((m) => m.id).sort()).toEqual([...expected].sort());
+	});
+
+	it("uses the anthropic-messages api and neon-anthropic provider", () => {
+		for (const model of ANTHROPIC_MODELS) {
+			expect(model.api).toBe("anthropic-messages");
+			expect(model.provider).toBe("neon-anthropic");
+		}
+	});
+
+	it("only includes ids that exist in the chat catalog", () => {
+		const chatIds = new Set(NEON_MODELS.map((m) => m.id));
+		for (const model of ANTHROPIC_MODELS) {
+			expect(chatIds.has(model.id), model.id).toBe(true);
+		}
+	});
+
+	it("preserves pricing, context, and modalities from the chat catalog", () => {
+		const byId = new Map(NEON_MODELS.map((m) => [m.id, m]));
+		for (const model of ANTHROPIC_MODELS) {
+			const source = byId.get(model.id);
+			expect(source, model.id).toBeDefined();
+			expect(model.contextWindow).toBe(source?.contextWindow);
+			expect(model.maxTokens).toBe(source?.maxTokens);
+			expect(model.cost).toEqual(source?.cost);
+			expect(model.input).toEqual(source?.input);
+			expect(model.reasoning).toBe(source?.reasoning);
+		}
+	});
+});
+
