@@ -16,6 +16,7 @@ All notable changes to `pi-provider-neon-ai-gateway` are documented here. Versio
 
 ### Changed
 
+- Upgraded the pinned `@earendil-works/pi-ai` and `@earendil-works/pi-coding-agent` dev dependencies from 0.85.1 to 1.3.0. The stream adapters now normalize context through the SDK's `normalizeContext`, and the generated catalog builders use a shared base because 1.3.0 turns `Model.compat` into a discriminated union. The gateway-specific workarounds (Gemini signatures, Claude thinking modes, error wrapping) are all still needed against 1.3.0 and stay in place.
 - `scripts/update-models.ts` owns the `ANTHROPIC_MODEL_IDS` set and emits the `ANTHROPIC_MODELS` array in the generated `src/models.ts`. The next regen no longer drops the anthropic catalog.
 
 ### Fixed

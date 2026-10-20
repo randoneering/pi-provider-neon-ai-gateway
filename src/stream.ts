@@ -21,6 +21,7 @@
 import {
 	anthropicMessagesApi,
 	createAssistantMessageEventStream,
+	normalizeContext,
 	openAICompletionsApi,
 } from "@earendil-works/pi-ai/compat";
 import type {
@@ -445,6 +446,7 @@ export function streamNeon(model: Model<Api>, context: Context, options?: Simple
 	if (model.api !== "openai-completions") {
 		throw new Error(`streamNeon expects openai-completions, got ${model.api}`);
 	}
+	const transcript = normalizeContext(context);
 	let baseUrl: string | undefined;
 	try {
 		baseUrl = resolveNeonBaseUrl({
@@ -474,7 +476,7 @@ export function streamNeon(model: Model<Api>, context: Context, options?: Simple
 		},
 	};
 
-	return openAICompletionsApi().streamSimple(resolvedModel, context, wrappedOptions);
+	return openAICompletionsApi().streamSimple(resolvedModel, transcript, wrappedOptions);
 }
 
 /**
@@ -492,6 +494,7 @@ export function streamNeonAnthropic(
 	if (model.api !== "anthropic-messages") {
 		throw new Error(`streamNeonAnthropic expects anthropic-messages, got ${model.api}`);
 	}
+	const transcript = normalizeContext(context);
 	let baseUrl: string | undefined;
 	try {
 		baseUrl = resolveNeonAnthropicBaseUrl({
@@ -532,5 +535,5 @@ export function streamNeonAnthropic(
 		};
 	}
 
-	return anthropicMessagesApi().streamSimple(resolvedModel, context, wrappedOptions);
+	return anthropicMessagesApi().streamSimple(resolvedModel, transcript, wrappedOptions);
 }

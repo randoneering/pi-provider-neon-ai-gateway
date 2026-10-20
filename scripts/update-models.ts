@@ -148,12 +148,10 @@ interface NeonModelInput {
 	cost: { input: number; output: number; cacheRead: number; cacheWrite: number };
 }
 
-function m(entry: NeonModelInput): Model<Api> {
+function base(entry: NeonModelInput) {
 	return {
 		id: entry.id,
 		name: entry.name,
-		api: "openai-completions",
-		provider: "neon",
 		baseUrl: "https://placeholder.invalid/v1",
 		reasoning: entry.reasoning,
 		input: entry.input,
@@ -163,12 +161,12 @@ function m(entry: NeonModelInput): Model<Api> {
 	};
 }
 
+function m(entry: NeonModelInput): Model<Api> {
+	return { ...base(entry), api: "openai-completions", provider: "neon" };
+}
+
 function mAnthropic(entry: NeonModelInput): Model<AnthropicApi> {
-	return {
-		...m(entry),
-		api: "anthropic-messages",
-		provider: "neon-anthropic",
-	};
+	return { ...base(entry), api: "anthropic-messages", provider: "neon-anthropic" };
 }
 
 export const NEON_MODELS: Model<"openai-completions">[] = [
