@@ -14,6 +14,7 @@ All notable changes to `pi-provider-neon-ai-gateway` are documented here. Versio
 - `neon-anthropic` provider now also covers `claude-haiku-5-5` and `claude-sonnet-5-5`. The set is hardcoded in `scripts/update-models.ts` and reconciled with the upstream Anthropic Messages docs.
 - `npm run test:smoke` supports `--provider neon|neon-anthropic` and `--tools` for an echo-tool round trip. Both paths use the extension adapters. Without `--provider`, Claude uses Anthropic Messages and other models use chat completions.
 - The model catalog generator skips upstream entries marked `released: false`, so announced-but-unavailable models cannot reach the picker on a regen. An absent flag keeps the entry for backward compatibility.
+- The generated catalog now carries the cache prices Neon publishes: 47 of 55 chat models have a real `cacheRead`, 22 also have `cacheWrite`, and models without published cache pricing keep 0. `/neon-models` shows the real cache-read rates instead of dashes.
 
 ### Changed
 

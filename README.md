@@ -79,7 +79,7 @@ A read-access key is enough for viewing. Changing the spending cap requires an o
 | `/neon-cap-block on` / `off` / `status` | yes | Opt-in guard that blocks turns when local spend reaches the binding limit |
 | `/neon-org list` | yes | List the orgs your management key can access |
 | `/neon-org use <id\|name>` | yes | Switch the active org, persist in `auth.json` |
-| `/neon-models` | no | List all Neon models with input/output pricing |
+| `/neon-models` | no | List all Neon models with input, output, and cache-read pricing |
 | `/neon-limits` | no | Show the latest upstream rate-limit headers from 429 responses |
 
 ### `/neon-balance`
