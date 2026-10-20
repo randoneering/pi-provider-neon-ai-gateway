@@ -182,6 +182,37 @@ describe("transformNeonPayload", () => {
 	});
 
 	describe("Gemini family", () => {
+		it("omits the streaming usage option rejected by Gemini without disabling streaming", () => {
+			const original = withBase({ stream: true, stream_options: { include_usage: true } });
+			for (const id of ["gemini-3-1-pro", "gemini-3-8-flash", "DATABRICKS-GEMINI-3-8-FLASH"]) {
+				const result = transformNeonPayload(original, id) as Record<string, unknown>;
+				expect(result.stream_options, id).toBeUndefined();
+				expect(result.stream, id).toBe(true);
+			}
+			expect(original.stream_options).toEqual({ include_usage: true });
+			expect((transformNeonPayload(original, "gpt-6-sol") as Record<string, unknown>).stream_options).toEqual({ include_usage: true });
+		});
+
+		it("restores each Gemini message's own signature without mutating history or other metadata", () => {
+			const messages = ["first-signature", "second-signature"].map((signature) => ({
+				role: "assistant",
+				tool_calls: [{ id: "repeated-id", type: "function", function: { name: "echo", arguments: "{}" } }],
+				reasoning_details: [
+					{ type: "reasoning.encrypted", id: "repeated-id", format: "neon-gemini", data: signature },
+					{ type: "reasoning.text", text: "unrelated metadata" },
+				],
+			}));
+			const original = withBase({ messages });
+			const snapshot = JSON.stringify(original);
+			const result = transformNeonPayload(original, "gemini-3-8-flash") as Record<string, unknown>;
+			const replayed = result.messages as Record<string, unknown>[];
+			expect((replayed[0]?.tool_calls as Record<string, unknown>[])[0]?.thoughtSignature).toBe("first-signature");
+			expect((replayed[1]?.tool_calls as Record<string, unknown>[])[0]?.thoughtSignature).toBe("second-signature");
+			expect(replayed[0]?.reasoning_details).toEqual([{ type: "reasoning.text", text: "unrelated metadata" }]);
+			expect(JSON.stringify(original)).toBe(snapshot);
+			expect(transformNeonPayload(original, "gpt-6-sol")).toEqual(original);
+		});
+
 		it("removes all sampling params for gemini-3-6-flash", () => {
 			const result = transformNeonPayload(
 				withBase({

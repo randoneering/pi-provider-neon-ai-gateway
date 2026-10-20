@@ -163,13 +163,15 @@ The active org is marked with `*` in the list output. The first time you run one
 /model
 ```
 
-Pick any `neon/<model-id>`. All 32 models show up in `pi --list-models`. Run `/neon-models` to see pricing for each model.
+Pick `neon/<model-id>` for chat completions or `neon-anthropic/<claude-id>` for native Claude.
+Run `pi --list-models` to see the catalog and `/neon-models` for pricing.
 
 ## Models
 
 Sourced from [neon.com/models.json](https://neon.com/models.json). The catalog and its per-model capability table are generated: run `npm run update-models` after upstream changes. The capability table (which models reject `temperature`, which support tools) drives the payload cleanup in `src/stream.ts`.
 
-This provider implements Chat Completions. Neon requires the Responses API for `gpt-5-3-codex` and `gpt-5-5-pro`, so the generator excludes them until this extension supports that endpoint ([Neon endpoint guidance](https://neon.com/docs/ai-gateway/models#which-endpoint-to-use)).
+The `neon` provider uses Chat Completions; `neon-anthropic` uses native Anthropic Messages.
+Neon requires the Responses API for `gpt-5-3-codex` and `gpt-5-5-pro`, so the generator excludes them until this extension supports that endpoint ([Neon endpoint guidance](https://neon.com/docs/ai-gateway/models#which-endpoint-to-use)).
 
 - **OpenAI**: gpt-5, gpt-5-mini, gpt-5-nano, gpt-5-1, gpt-5-2, gpt-5-4, gpt-5-4-mini, gpt-5-4-nano, gpt-5-5, gpt-5-6-luna, gpt-5-6-sol, gpt-5-6-terra, gpt-6-astra, gpt-oss-120b, gpt-oss-20b
 - **Google**: gemini-3-1-flash-lite, gemini-3-1-pro, gemini-3-5-flash, gemini-3-5-flash-lite, gemini-3-6-flash, gemini-3-flash, gemma-3-12b
@@ -181,6 +183,23 @@ This provider implements Chat Completions. Neon requires the Responses API for `
 - **Thinking Machines**: inkling
 
 GPT-5.x, Gemini 3.x, Grok, and Inkling are foundation models and need the **Apply for access** step in the Console. The rest work as soon as credits are loaded.
+
+### Model compatibility
+
+Gemini 3 streaming omits the rejected `stream_options` field.
+Tool calls keep their opaque [thought signatures](https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures) through saved history and replay, and a final `stop` becomes `tool_calls` only when that choice emitted tools.
+Normal text stops and truncation stay unchanged.
+
+Newer Claude models on `neon-anthropic` use these native thinking modes:
+
+| Models | Thinking off | Thinking on |
+|---|---|---|
+| Opus 5.5, Fable 5/5.1 | Adaptive, low effort; off is unavailable | Adaptive, requested effort |
+| Sonnet 5.5 | `between_tools` | Adaptive, requested effort |
+| Opus 4.7/4.8/5, Sonnet 5, Haiku 5.5 | Disabled | Adaptive, requested effort |
+
+Other Claude models keep the pinned SDK's existing thinking behavior.
+See [Neon's native thinking reference](https://neon.com/docs/ai-gateway/anthropic-messages#extended-thinking).
 
 ## Errors
 
@@ -224,6 +243,8 @@ Choose a provider explicitly to compare the same Claude model on both endpoints:
 npm run test:smoke -- claude-sonnet-4-6 --provider neon
 npm run test:smoke -- claude-sonnet-4-6 --provider neon-anthropic --tools
 npm run test:smoke -- gpt-6-luna --provider neon --tools --thinking
+npm run test:smoke -- gemini-3-8-flash --provider neon --tools
+npm run test:smoke -- claude-sonnet-5-5 --provider neon-anthropic --tools --thinking
 ```
 
 Without `--provider`, Claude models use `neon-anthropic`; other models use `neon`.
