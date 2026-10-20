@@ -159,11 +159,12 @@ describe("auth file shape", () => {
 			anthropic: { type: "api_key", key: "fake-unrelated-token" },
 			neon: { type: "api_key", key: "fake-old-token", managementKey: "napi_fake", orgId: "org-fake", capBlockEnabled: true, env: { KEEP: "value" } },
 			"neon-anthropic": { type: "api_key", key: "fake-old-anthropic-token", env: { KEEP_ANTHROPIC: "value" } },
+			"neon-responses": { type: "api_key", key: "fake-old-responses-token", env: { KEEP_RESPONSES: "value" } },
 		}));
 		await runAuthCommand("neon-login", ["fake-new-token", "https://br-new.ai.neon.tech/v1/", ""]);
 		const saved = readAuthFileLike(authPath);
 		expect(saved.anthropic).toEqual({ type: "api_key", key: "fake-unrelated-token" });
-		for (const provider of ["neon", "neon-anthropic"]) {
+		for (const provider of ["neon", "neon-anthropic", "neon-responses"]) {
 			const credential = saved[provider] as Record<string, unknown>;
 			expect(credential.type).toBe("api_key");
 			expect(credential.key).toBe("fake-new-token");
@@ -175,14 +176,16 @@ describe("auth file shape", () => {
 		expect(neon.capBlockEnabled).toBe(true);
 		expect((neon.env as Record<string, unknown>).KEEP).toBe("value");
 		expect(((saved["neon-anthropic"] as Record<string, unknown>).env as Record<string, unknown>).KEEP_ANTHROPIC).toBe("value");
+		expect(((saved["neon-responses"] as Record<string, unknown>).env as Record<string, unknown>).KEEP_RESPONSES).toBe("value");
 	});
 
-	it.each(["neon", "neon-anthropic", "both"])("logout removes %s credentials and preserves unrelated providers", async (provider) => {
+	it.each(["neon", "neon-anthropic", "neon-responses", "all"])("logout removes %s credentials and preserves unrelated providers", async (provider) => {
 		const authPath = join(tempDir, "auth.json");
 		const unrelated = { type: "api_key", key: "fake-unrelated-token" };
 		const data: Record<string, unknown> = { anthropic: unrelated };
-		if (provider !== "neon-anthropic") data.neon = { type: "api_key", key: "fake-token" };
-		if (provider !== "neon") data["neon-anthropic"] = { type: "api_key", key: "fake-token" };
+		if (provider === "neon" || provider === "all") data.neon = { type: "api_key", key: "fake-token" };
+		if (provider === "neon-anthropic" || provider === "all") data["neon-anthropic"] = { type: "api_key", key: "fake-token" };
+		if (provider === "neon-responses" || provider === "all") data["neon-responses"] = { type: "api_key", key: "fake-token" };
 		writeFileSync(authPath, JSON.stringify(data));
 		await runAuthCommand("neon-logout");
 		expect(readAuthFileLike(authPath)).toEqual({ anthropic: unrelated });
@@ -212,6 +215,7 @@ describe("auth file shape", () => {
 		const text = (await runAuthCommand("neon-status")).join("\n");
 		expect(text).toContain("neon: configured");
 		expect(text).toContain("neon-anthropic: missing");
+		expect(text).toContain("neon-responses: missing");
 		expect(text).toContain("/neon-login");
 	});
 
@@ -226,12 +230,13 @@ describe("auth file shape", () => {
 		expect(text).not.toContain("fake-anthropic-token");
 	});
 
-	it("status reports both providers configured from the process environment", async () => {
+	it("status reports all providers configured from the process environment", async () => {
 		vi.stubEnv("NEON_AI_GATEWAY_TOKEN", "fake-process-token");
 		vi.stubEnv("NEON_AI_GATEWAY_BASE_URL", "https://process.example");
 		const text = (await runAuthCommand("neon-status")).join("\n");
 		expect(text).toContain("neon: configured");
 		expect(text).toContain("neon-anthropic: configured");
+		expect(text).toContain("neon-responses: configured");
 		expect(text).toContain("https://process.example");
 		expect(text).not.toContain("fake-process-token");
 	});

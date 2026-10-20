@@ -22,11 +22,11 @@ import { registerNeonAccountCommands, registerNeonSpendingLimitCommand } from ".
 import { registerNeonAlertHooks } from "./alerts.js";
 import { registerNeonAuthCommands } from "./auth.js";
 import { NEON_AI_GATEWAY_BASE_URL_ENV, NEON_AI_GATEWAY_TOKEN_ENV } from "./config.js";
-import { ANTHROPIC_MODELS, NEON_MODELS } from "./models.js";
+import { ANTHROPIC_MODELS, NEON_MODELS, RESPONSES_MODELS } from "./models.js";
 import { registerNeonModelCostCommand } from "./model-cost.js";
 import { registerNeonOrgCommand } from "./orgs.js";
 import { registerNeonRateLimitHook } from "./ratelimit.js";
-import { streamNeon, streamNeonAnthropic } from "./stream.js";
+import { streamNeon, streamNeonAnthropic, streamNeonResponses } from "./stream.js";
 
 export default function (pi: ExtensionAPI): void {
 	pi.registerProvider("neon", {
@@ -47,6 +47,16 @@ export default function (pi: ExtensionAPI): void {
 		api: "anthropic-messages",
 		models: ANTHROPIC_MODELS,
 		streamSimple: streamNeonAnthropic,
+	});
+
+	pi.registerProvider("neon-responses", {
+		name: "Neon AI Gateway (OpenAI Responses)",
+		baseUrl: `\${${NEON_AI_GATEWAY_BASE_URL_ENV}}/openai/v1`,
+		apiKey: `$${NEON_AI_GATEWAY_TOKEN_ENV}`,
+		authHeader: true,
+		api: "openai-responses",
+		models: RESPONSES_MODELS,
+		streamSimple: streamNeonResponses,
 	});
 
 	registerNeonAuthCommands(pi);

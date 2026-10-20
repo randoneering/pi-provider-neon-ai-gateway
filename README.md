@@ -50,7 +50,7 @@ export NEON_AI_GATEWAY_BASE_URL="https://br-your-branch.ai.c-2.us-east-2.aws.neo
 pi
 ```
 
-Or run `/neon-login` inside pi and paste both values to configure both `neon` and `neon-anthropic`.
+Or run `/neon-login` inside pi and paste both values to configure `neon`, `neon-anthropic`, and `neon-responses`.
 If you logged in before this update, run `/neon-login` again, then `/reload`, to save the Anthropic credential too.
 `/neon-status` reports each provider's configuration and the resolved base URL.
 `/neon-logout` removes both stored credentials; shell environment variables remain unchanged.
@@ -163,18 +163,18 @@ The active org is marked with `*` in the list output. The first time you run one
 /model
 ```
 
-Pick `neon/<model-id>` for chat completions or `neon-anthropic/<claude-id>` for native Claude.
+Pick `neon/<model-id>` for chat completions, `neon-anthropic/<claude-id>` for native Claude, or `neon-responses/<gpt-id>` for the two Responses-only models.
 Run `pi --list-models` to see the catalog and `/neon-models` for pricing.
 
 ## Models
 
 Sourced from [neon.com/models.json](https://neon.com/models.json). The catalog and its per-model capability table are generated: run `npm run update-models` after upstream changes. The capability table (which models reject `temperature`, which support tools) drives the payload cleanup in `src/stream.ts`.
 
-The `neon` provider uses Chat Completions; `neon-anthropic` uses native Anthropic Messages.
-Neon requires the Responses API for `gpt-5-3-codex` and `gpt-5-5-pro`, so the generator excludes them until this extension supports that endpoint ([Neon endpoint guidance](https://neon.com/docs/ai-gateway/models#which-endpoint-to-use)).
+The `neon` provider uses Chat Completions; `neon-anthropic` uses native Anthropic Messages; `neon-responses` uses the OpenAI Responses API at `/openai/v1/responses`.
+`gpt-5-3-codex` and `gpt-5-5-pro` require the Responses endpoint, so they are exposed only on `neon-responses` ([Neon endpoint guidance](https://neon.com/docs/ai-gateway/models#which-endpoint-to-use)).
 
 - **Anthropic**: claude-fable-5, claude-fable-5-1, claude-haiku-4-5, claude-haiku-5-5, claude-opus-4-1, claude-opus-4-5, claude-opus-4-6, claude-opus-4-7, claude-opus-4-8, claude-opus-5, claude-opus-5-5, claude-sonnet-4-5, claude-sonnet-4-6, claude-sonnet-5, claude-sonnet-5-5
-- **OpenAI**: gpt-5, gpt-5-mini, gpt-5-nano, gpt-5-1, gpt-5-2, gpt-5-4, gpt-5-4-mini, gpt-5-4-nano, gpt-5-5, gpt-5-6-luna, gpt-5-6-sol, gpt-5-6-terra, gpt-6-1-sol, gpt-6-astra, gpt-6-luna, gpt-6-sol, gpt-oss-120b, gpt-oss-20b
+- **OpenAI**: gpt-5, gpt-5-mini, gpt-5-nano, gpt-5-1, gpt-5-2, gpt-5-4, gpt-5-4-mini, gpt-5-4-nano, gpt-5-5, gpt-5-6-luna, gpt-5-6-sol, gpt-5-6-terra, gpt-6-1-sol, gpt-6-astra, gpt-6-luna, gpt-6-sol, gpt-oss-120b, gpt-oss-20b; plus `gpt-5-3-codex` and `gpt-5-5-pro` on `neon-responses`
 - **Google**: gemini-3-1-flash-lite, gemini-3-1-pro, gemini-3-5-flash, gemini-3-5-flash-lite, gemini-3-6-flash, gemini-3-7-flash, gemini-3-8-flash, gemini-3-flash, gemma-3-12b
 - **Meta**: llama-4-maverick, meta-llama-3-1-8b-instruct, meta-llama-3-3-70b-instruct
 - **xAI**: grok-4-6, grok-4-7
@@ -247,12 +247,13 @@ Choose a provider explicitly to compare the same Claude model on both endpoints:
 ```bash
 npm run test:smoke -- claude-sonnet-4-6 --provider neon
 npm run test:smoke -- claude-sonnet-4-6 --provider neon-anthropic --tools
+npm run test:smoke -- gpt-5-5-pro --provider neon-responses --tools --thinking
 npm run test:smoke -- gpt-6-luna --provider neon --tools --thinking
 npm run test:smoke -- gemini-3-8-flash --provider neon --tools
 npm run test:smoke -- claude-sonnet-5-5 --provider neon-anthropic --tools --thinking
 ```
 
-Without `--provider`, Claude models use `neon-anthropic`; other models use `neon`.
+Without `--provider`, Claude models use `neon-anthropic`, the two Responses-only models use `neon-responses`, and everything else uses `neon`.
 `--tools` checks one local echo-tool call and its follow-up reply, with at most two requests.
 The check fails on gateway errors, missing or unexpected tool calls, truncated responses, or a reply other than `smoke test ok`.
 Luna chat-completions tool calls use `reasoning_effort: "none"`, even with `--thinking`, because the gateway requires it.

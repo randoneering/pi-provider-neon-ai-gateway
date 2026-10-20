@@ -23,6 +23,7 @@ import {
 	createAssistantMessageEventStream,
 	normalizeContext,
 	openAICompletionsApi,
+	openAIResponsesApi,
 } from "@earendil-works/pi-ai/compat";
 import type {
 	Api,
@@ -37,6 +38,7 @@ import {
 	NEON_AI_GATEWAY_BASE_URL_ENV,
 	resolveNeonAnthropicBaseUrl,
 	resolveNeonBaseUrl,
+	resolveNeonResponsesBaseUrl,
 } from "./config.js";
 import { canonicalModelId, MODEL_CAPABILITIES } from "./models.js";
 
@@ -360,7 +362,14 @@ export function enrichRateLimitMessage(body: unknown, retryAfterHeader: string |
 	};
 }
 
-function makeNeonFetch(baseFetch: FetchFunction | undefined, isArrayContentModel: boolean, isGemini = false): FetchFunction {
+/**
+ * Wrap a fetch function so Neon's flat `{ error_code, message }` error JSON
+ * becomes the nested `{ error: { message } }` envelope pi expects. Ok SSE
+ * bodies pass through untouched (the array-content/Gemini rewrite only runs
+ * when the caller opts in), so the OpenAI Responses event stream is never
+ * corrupted. Exported for testing the responses path.
+ */
+export function makeNeonFetch(baseFetch: FetchFunction | undefined, isArrayContentModel: boolean, isGemini = false): FetchFunction {
 	const request = baseFetch ?? globalThis.fetch;
 	return async (input, init) => {
 		const response = await request(input, init);
@@ -536,4 +545,54 @@ export function streamNeonAnthropic(
 	}
 
 	return anthropicMessagesApi().streamSimple(resolvedModel, transcript, wrappedOptions);
+}
+
+/**
+ * Stream adapter for the `/openai/v1/responses` endpoint, exposed on the
+ * `neon-responses` provider (gpt-5-3-codex, gpt-5-5-pro).
+ *
+ * Reuses pi-ai's native OpenAI Responses parsing, with two Neon-specific
+ * adjustments:
+ *
+ * - The context is normalized with `normalizeContext` before handoff. The
+ *   responses adapter otherwise drops `context.tools`, and the codex models
+ *   then hallucinate tool results (verified live).
+ * - fetch is wrapped with `makeNeonFetch` so the gateway's flat
+ *   `{ error_code, message }` error JSON becomes the nested
+ *   `{ error: { message } }` envelope. Ok responses SSE bodies pass through
+ *   the wrapper untouched; only non-ok JSON responses are rewritten.
+ */
+export function streamNeonResponses(
+	model: Model<Api>,
+	context: Context,
+	options?: SimpleStreamOptions,
+): AssistantMessageEventStream {
+	if (model.api !== "openai-responses") {
+		throw new Error(`streamNeonResponses expects openai-responses, got ${model.api}`);
+	}
+	// Normalizing here (not inside the adapter) keeps context.tools intact.
+	const transcript = normalizeContext(context);
+	let baseUrl: string | undefined;
+	try {
+		baseUrl = resolveNeonResponsesBaseUrl({
+			processEnv: process.env as Record<string, string | undefined>,
+			credentialEnv: options?.env,
+		});
+	} catch (error) {
+		return missingBaseUrlStream(model, (error as Error).message);
+	}
+	if (!baseUrl) {
+		return missingBaseUrlStream(model);
+	}
+
+	const resolvedModel: Model<"openai-responses"> =
+		model.baseUrl === baseUrl ? (model as Model<"openai-responses">) : ({ ...model, baseUrl } as Model<"openai-responses">);
+	const wrappedOptions: SimpleStreamOptions = {
+		...options,
+		// The responses SSE body path passes through untouched; only non-ok
+		// JSON error responses get rewritten into the nested envelope.
+		fetch: makeNeonFetch(options?.fetch, false),
+	};
+
+	return openAIResponsesApi().streamSimple(resolvedModel, transcript, wrappedOptions);
 }

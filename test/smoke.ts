@@ -5,8 +5,11 @@
  * npm run test:smoke -- claude-sonnet-4-6 --provider neon
  * npm run test:smoke -- claude-sonnet-4-6 --provider neon-anthropic --tools
  * npm run test:smoke -- gpt-6-luna --tools --thinking
+ * npm run test:smoke -- gpt-5-3-codex --provider neon-responses --tools
  *
- * Without --provider, Claude uses Anthropic Messages and other models use chat.
+ * Without --provider, Claude uses Anthropic Messages, the responses-only
+ * models (gpt-5-3-codex, gpt-5-5-pro) use neon-responses, and other models
+ * use chat.
  * Tool mode runs one local echo tool and verifies the follow-up reply.
  */
 
