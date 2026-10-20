@@ -6,7 +6,8 @@
  * to a temp directory, so the real ~/.pi/agent/auth.json is never touched.
  */
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -49,13 +50,36 @@ describe("validateManagementKey", () => {
 	});
 });
 
+type AuthCommand = Parameters<ExtensionAPI["registerCommand"]>[1];
+
+async function runAuthCommand(name: string, inputs: (string | undefined)[] = []): Promise<string[]> {
+	const commands = new Map<string, AuthCommand>();
+	authModule.registerNeonAuthCommands({
+		registerCommand: (commandName: string, command: AuthCommand): void => {
+			commands.set(commandName, command);
+		},
+	} as unknown as ExtensionAPI);
+	const command = commands.get(name);
+	if (!command) throw new Error(`Auth command not registered: ${name}`);
+	const notifications: string[] = [];
+	await command.handler("", { ui: {
+		input: async (): Promise<string | undefined> => inputs.shift(),
+		notify: (message: string): void => { notifications.push(message); },
+	} } as unknown as Parameters<AuthCommand["handler"]>[1]);
+	return notifications;
+}
+
 describe("auth file shape", () => {
 	let tempDir: string;
 	beforeEach(() => {
 		tempDir = mkdtempSync(join(tmpdir(), "pi-neon-auth-"));
 		setAgentDir(tempDir);
+		vi.stubEnv("NEON_AI_GATEWAY_TOKEN", "");
+		vi.stubEnv("NEON_AI_GATEWAY_BASE_URL", "");
+		vi.stubEnv("NEON_API_KEY", "");
 	});
 	afterEach(() => {
+		vi.unstubAllEnvs();
 		unsetAgentDir();
 		rmSync(tempDir, { recursive: true, force: true });
 	});
@@ -127,6 +151,89 @@ describe("auth file shape", () => {
 		const neon = parsed.neon as Record<string, unknown>;
 		expect(neon.managementKey).toBeUndefined();
 		expect(neon.orgId).toBeUndefined();
+	});
+
+	it("login stores a credential for both registered Neon providers and preserves unrelated settings", async () => {
+		const authPath = join(tempDir, "auth.json");
+		writeFileSync(authPath, JSON.stringify({
+			anthropic: { type: "api_key", key: "fake-unrelated-token" },
+			neon: { type: "api_key", key: "fake-old-token", managementKey: "napi_fake", orgId: "org-fake", capBlockEnabled: true, env: { KEEP: "value" } },
+			"neon-anthropic": { type: "api_key", key: "fake-old-anthropic-token", env: { KEEP_ANTHROPIC: "value" } },
+		}));
+		await runAuthCommand("neon-login", ["fake-new-token", "https://br-new.ai.neon.tech/v1/", ""]);
+		const saved = readAuthFileLike(authPath);
+		expect(saved.anthropic).toEqual({ type: "api_key", key: "fake-unrelated-token" });
+		for (const provider of ["neon", "neon-anthropic"]) {
+			const credential = saved[provider] as Record<string, unknown>;
+			expect(credential.type).toBe("api_key");
+			expect(credential.key).toBe("fake-new-token");
+			expect((credential.env as Record<string, unknown>).NEON_AI_GATEWAY_BASE_URL).toBe("https://br-new.ai.neon.tech");
+		}
+		const neon = saved.neon as Record<string, unknown>;
+		expect(neon.managementKey).toBe("napi_fake");
+		expect(neon.orgId).toBe("org-fake");
+		expect(neon.capBlockEnabled).toBe(true);
+		expect((neon.env as Record<string, unknown>).KEEP).toBe("value");
+		expect(((saved["neon-anthropic"] as Record<string, unknown>).env as Record<string, unknown>).KEEP_ANTHROPIC).toBe("value");
+	});
+
+	it.each(["neon", "neon-anthropic", "both"])("logout removes %s credentials and preserves unrelated providers", async (provider) => {
+		const authPath = join(tempDir, "auth.json");
+		const unrelated = { type: "api_key", key: "fake-unrelated-token" };
+		const data: Record<string, unknown> = { anthropic: unrelated };
+		if (provider !== "neon-anthropic") data.neon = { type: "api_key", key: "fake-token" };
+		if (provider !== "neon") data["neon-anthropic"] = { type: "api_key", key: "fake-token" };
+		writeFileSync(authPath, JSON.stringify(data));
+		await runAuthCommand("neon-logout");
+		expect(readAuthFileLike(authPath)).toEqual({ anthropic: unrelated });
+	});
+
+	it.each([
+		[undefined],
+		["fake-token", undefined],
+		["!echo fake-token"],
+		["$FAKE_TOKEN"],
+		["fake-token", "not a URL"],
+	])("cancelled or invalid login leaves both stored credentials unchanged (%j)", async (...inputs) => {
+		const authPath = join(tempDir, "auth.json");
+		const prior = JSON.stringify({
+			neon: { type: "api_key", key: "fake-old-token" },
+			"neon-anthropic": { type: "api_key", key: "fake-old-anthropic-token" },
+		});
+		writeFileSync(authPath, prior);
+		await runAuthCommand("neon-login", inputs);
+		expect(readFileSync(authPath, "utf8")).toBe(prior);
+	});
+
+	it("status distinguishes legacy Neon-only auth from Anthropic auth", async () => {
+		writeFileSync(join(tempDir, "auth.json"), JSON.stringify({
+			neon: { type: "api_key", key: "fake-token", env: { NEON_AI_GATEWAY_BASE_URL: "https://stored.example" } },
+		}));
+		const text = (await runAuthCommand("neon-status")).join("\n");
+		expect(text).toContain("neon: configured");
+		expect(text).toContain("neon-anthropic: missing");
+		expect(text).toContain("/neon-login");
+	});
+
+	it("status uses an Anthropic-only stored credential without exposing its token", async () => {
+		writeFileSync(join(tempDir, "auth.json"), JSON.stringify({
+			"neon-anthropic": { type: "api_key", key: "fake-anthropic-token", env: { NEON_AI_GATEWAY_BASE_URL: "https://stored.example" } },
+		}));
+		const text = (await runAuthCommand("neon-status")).join("\n");
+		expect(text).toContain("neon: missing");
+		expect(text).toContain("neon-anthropic: configured");
+		expect(text).toContain("https://stored.example");
+		expect(text).not.toContain("fake-anthropic-token");
+	});
+
+	it("status reports both providers configured from the process environment", async () => {
+		vi.stubEnv("NEON_AI_GATEWAY_TOKEN", "fake-process-token");
+		vi.stubEnv("NEON_AI_GATEWAY_BASE_URL", "https://process.example");
+		const text = (await runAuthCommand("neon-status")).join("\n");
+		expect(text).toContain("neon: configured");
+		expect(text).toContain("neon-anthropic: configured");
+		expect(text).toContain("https://process.example");
+		expect(text).not.toContain("fake-process-token");
 	});
 
 	it("module exports registerNeonAuthCommands", () => {
