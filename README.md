@@ -50,7 +50,10 @@ export NEON_AI_GATEWAY_BASE_URL="https://br-your-branch.ai.c-2.us-east-2.aws.neo
 pi
 ```
 
-Or run `/neon-login` inside pi and paste both values. `/neon-status` shows the resolved base URL. `/neon-logout` clears it.
+Or run `/neon-login` inside pi and paste both values to configure both `neon` and `neon-anthropic`.
+If you logged in before this update, run `/neon-login` again, then `/reload`, to save the Anthropic credential too.
+`/neon-status` reports each provider's configuration and the resolved base URL.
+`/neon-logout` removes both stored credentials; shell environment variables remain unchanged.
 
 ### Management key (optional)
 
@@ -81,7 +84,7 @@ A read-access key is enough for viewing. Changing the spending cap requires an o
 
 ### `/neon-balance`
 
-Fetches the real prepaid credit balance from `/organizations/{org_id}/billing/aigw_credits/balance` and the spending cap from `/organizations/{org_id}/billing/spending_limit`. Local spend is aggregated from the session JSONL files under `~/.pi/agent/sessions/`.
+Fetches the real prepaid credit balance from `/organizations/{org_id}/billing/aigw_credits/balance` and the spending cap from `/organizations/{org_id}/billing/spending_limit`. Local spend is aggregated from the session JSONL files under `~/.pi/agent/sessions/` for both the `neon` and `neon-anthropic` providers; alerts, footer percentages, and the opt-in cap guard use that same combined local spend.
 
 ```text
 Neon account balance:

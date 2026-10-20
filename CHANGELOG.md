@@ -6,6 +6,8 @@ All notable changes to `pi-provider-neon-ai-gateway` are documented here. Versio
 
 ### Added
 
+- `/neon-login` stores credentials for both `neon` and `neon-anthropic`, `/neon-status` reports each provider, and `/neon-logout` removes both stored credentials.
+- Local spend, cap alerts and blocking, footer percentages, and rate-limit capture now include Anthropic provider responses.
 - 13 new Claude chat models from `https://neon.com/models.json`: `claude-fable-5`, `claude-fable-5-1`, `claude-haiku-4-5`, `claude-sonnet-4-5`, `claude-sonnet-4-6`, `claude-sonnet-5`, `claude-opus-4-1`, `claude-opus-4-5`, `claude-opus-4-6`, `claude-opus-4-7`, `claude-opus-4-8`, `claude-opus-5`, `claude-opus-5-5`. Regenerate the catalog with `npm run update-models`.
 - `neon-anthropic` provider exposes the same 13 Claude models on the `/anthropic/v1/messages` endpoint. Use it from the `/model` picker to get extended thinking (`thinking` with `budget_tokens`) and prompt caching (`cache_control` on content blocks), neither of which chat completions can forward. Reuses the same `NEON_AI_GATEWAY_TOKEN` and branch URL; pricing and capability metadata are shared with the chat catalog.
 - 10 more chat models from `https://neon.com/models.json`: `claude-haiku-5-5`, `claude-sonnet-5-5`, `deepseek-v4-1-flash`, `gemini-3-7-flash`, `gemini-3-8-flash`, `glm-5-3`, `gpt-6-1-sol`, `gpt-6-luna`, `gpt-6-sol`, `grok-4-7`. Regenerate the catalog with `npm run update-models`.
@@ -18,6 +20,7 @@ All notable changes to `pi-provider-neon-ai-gateway` are documented here. Versio
 
 ### Fixed
 
+- Re-running `/neon-login` preserves the saved cap-block setting.
 - `claude-opus-5-5` returned an empty string when it reasoned. The Neon gateway sends `message.content` as a list of `reasoning` and `text` blocks; pi-ai's openai-completions parser expects a string. The streaming normalizer flattens the list into the `content` plus `reasoning_content` shape the `gpt-oss` harmony adapter uses.
 - `gemini-3-7-flash` and `gemini-3-8-flash` no longer send `frequency_penalty` and `presence_penalty` to the gateway. The two Gemini branches in `transformNeonPayload` collapsed into one `/^gemini-3-/u` regex so every Gemini 3 model inherits the same penalty stripping, with a regression test that loops the catalog.
 

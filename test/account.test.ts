@@ -69,6 +69,19 @@ describe("aggregateLocalSpend", () => {
 		expect(result.sessionCount).toBe(1);
 	});
 
+	it("counts neon-anthropic alongside neon but excludes unrelated and near-matching providers", async () => {
+		const sessionsDir = join(tempDir, "sessions", "proj-a");
+		mkdirSync(sessionsDir, { recursive: true });
+		const anthropic = JSON.stringify({ type: "message", message: { ...sampleUsage(0.02), provider: "neon-anthropic" } });
+		const unrelated = JSON.stringify({ type: "message", message: { ...sampleUsage(50), provider: "other-neon" } });
+		const nearMatch = JSON.stringify({ type: "message", message: { ...sampleUsage(50), provider: "neon-anthropic-extra" } });
+		writeFileSync(join(sessionsDir, "session-1.jsonl"), [sampleMessageLine(0.01), anthropic, unrelated, nearMatch].join("\n"));
+
+		const result = await accountModule.aggregateLocalSpend(tempDir);
+		expect(result.totalCost).toBeCloseTo(0.03, 6);
+		expect(result.sessionCount).toBe(1);
+	});
+
 	it("ignores non-neon providers and aborted messages", async () => {
 		const sessionsDir = join(tempDir, "sessions", "proj-a");
 		mkdirSync(sessionsDir, { recursive: true });
@@ -414,6 +427,23 @@ describe("/neon-balance command output", () => {
 		expect(text).toMatch(/Spending cap:\s+\(none configured\)/);
 		expect(text).not.toMatch(/Headroom:\s+\$/);
 		expect(text).toMatch(/Balance:\s+\(no balance\)/);
+	});
+
+	it("includes Anthropic provider usage in local spend and headroom", async () => {
+		writeFileSync(join(tempDir, "auth.json"), JSON.stringify({ neon: { type: "api_key", key: "fake-token", managementKey: "napi_fake", orgId: "org-test-1" } }));
+		const sessionsDir = join(tempDir, "sessions", "proj-a");
+		mkdirSync(sessionsDir, { recursive: true });
+		writeFileSync(join(sessionsDir, "s1.jsonl"), JSON.stringify({
+			type: "message",
+			message: { ...sampleUsage(0.23), provider: "neon-anthropic" },
+		}));
+		globalThis.fetch = (async () => new Response(JSON.stringify({ spending_limit_cents: 5000 }), { status: 200 })) as typeof fetch;
+		const notifications: { message: string; level: string }[] = [];
+		const pi = { _handler: undefined as ((a: string, c: unknown) => Promise<void>) | undefined, registerCommand(_n: string, o: { handler: (a: string, c: unknown) => Promise<void> }) { this._handler = o.handler; } };
+		accountModule.registerNeonAccountCommands(pi as never);
+		await pi._handler!("", { ui: { notify: (message: string, level: string) => notifications.push({ message, level }) } });
+		expect(notifications[0]?.message).toMatch(/Local spend:\s+\$0\.23/);
+		expect(notifications[0]?.message).toMatch(/Headroom:\s+\$49\.77/);
 	});
 
 	it("renders the real AI Gateway credit balance", async () => {

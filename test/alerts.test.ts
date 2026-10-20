@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { registerNeonAlertHooks } from "../src/alerts.js";
 import { setAgentDir, unsetAgentDir } from "./helpers/agent-dir.js";
 
-function writeSpend(agentDir: string, cost: number): void {
+function writeSpend(agentDir: string, cost: number, provider = "neon"): void {
 	const dir = join(agentDir, "sessions", "alert-test");
 	mkdirSync(dir, { recursive: true });
 	writeFileSync(
@@ -14,7 +14,7 @@ function writeSpend(agentDir: string, cost: number): void {
 		JSON.stringify({
 			type: "message",
 			message: {
-				provider: "neon",
+				provider,
 				usage: { cost: { total: cost } },
 				timestamp: Date.now(),
 			},
@@ -83,6 +83,18 @@ describe("Neon spending cap alerts", () => {
 			setStatus: (key, value) => statuses.push([key, value]),
 		} });
 	}
+
+	it("includes Anthropic provider usage in alerts and footer percentage", async () => {
+		writeSpend(agentDir, 30);
+		const dir = join(agentDir, "sessions", "alert-test");
+		writeFileSync(join(dir, "session.jsonl"), [
+			JSON.stringify({ type: "message", message: { provider: "neon", usage: { cost: { total: 30 } }, timestamp: Date.now() } }),
+			JSON.stringify({ type: "message", message: { provider: "neon-anthropic", usage: { cost: { total: 30 } }, timestamp: Date.now() } }),
+		].join("\n"));
+		await run(registerAndGetHandler());
+		expect(statuses).toContainEqual(["neon-cap", "$100.00 · 60%"]);
+		expect(notifications.some((message) => message.includes("$60.00"))).toBe(true);
+	});
 
 	it("fires each threshold only once per session", async () => {
 		writeSpend(agentDir, 8000);

@@ -1,5 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
+const NEON_PROVIDER_IDS = ["neon", "neon-anthropic"] as const;
+
 const RATE_LIMIT_HEADERS = [
 	"Retry-After",
 	"X-Ratelimit-Limit-Requests",
@@ -29,9 +31,12 @@ export function getNeonRateLimitState(): NeonRateLimitState {
 
 function isNeonResponse(event: unknown): boolean {
 	if (!isRecord(event)) return false;
-	if (event.provider === "neon" || event.providerId === "neon") return true;
+	if (NEON_PROVIDER_IDS.includes(event.provider as (typeof NEON_PROVIDER_IDS)[number]) || NEON_PROVIDER_IDS.includes(event.providerId as (typeof NEON_PROVIDER_IDS)[number])) return true;
 	const model = event.model;
-	return isRecord(model) && (model.provider === "neon" || model.providerId === "neon");
+	return isRecord(model) && (
+		NEON_PROVIDER_IDS.includes(model.provider as (typeof NEON_PROVIDER_IDS)[number]) ||
+		NEON_PROVIDER_IDS.includes(model.providerId as (typeof NEON_PROVIDER_IDS)[number])
+	);
 }
 
 function captureHeaders(event: unknown): void {

@@ -29,6 +29,7 @@ import { readAuthFile, writeAuthFile } from "./auth.js";
 import { resolveActiveOrg } from "./orgs.js";
 
 const PROVIDER_ID = "neon";
+const ANTHROPIC_PROVIDER_ID = "neon-anthropic";
 const MANAGEMENT_API_TIMEOUT_MS = 10_000;
 
 export interface LocalSpend {
@@ -124,7 +125,7 @@ function extractNeonCost(value: unknown): NeonCostSample | undefined {
 	if (value.type !== "message") return undefined;
 	const message = value.message;
 	if (!isRecord(message)) return undefined;
-	if (message.provider !== "neon") return undefined;
+	if (message.provider !== PROVIDER_ID && message.provider !== ANTHROPIC_PROVIDER_ID) return undefined;
 	const usage = message.usage;
 	if (!isRecord(usage)) return undefined;
 	const cost = usage.cost;
