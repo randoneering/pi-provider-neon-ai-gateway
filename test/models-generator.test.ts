@@ -71,6 +71,21 @@ describe("buildModelsSource", () => {
 		expect(source).toContain("gpt-5-6-luna");
 	});
 
+	it("excludes unreleased upstream entries from the generated catalog", () => {
+		const source = buildModelsSource([
+			{ id: "gpt-5-9-mist", name: "GPT-5.9 Mist", family: "gpt-5", released: false, temperature: false, tool_call: true },
+			{ id: "gpt-5-8", name: "GPT-5.8", family: "gpt-5", released: true, temperature: false, tool_call: true },
+		]);
+		expect(source).not.toContain("gpt-5-9-mist");
+		expect(source).toContain('id: "gpt-5-8"');
+		expect(source).toContain('"gpt-5-8": { temperature: false, toolCall: true },');
+	});
+
+	it("keeps entries that omit the released flag for backward compatibility", () => {
+		const source = buildModelsSource([{ id: "gpt-5-legacy", name: "GPT-5 Legacy", family: "gpt-5" }]);
+		expect(source).toContain('id: "gpt-5-legacy"');
+	});
+
 	it("excludes models that require the Responses endpoint", () => {
 		const source = buildModelsSource([
 			{ id: "gpt-5-3-codex", family: "gpt-5" },

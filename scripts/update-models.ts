@@ -15,6 +15,8 @@ export interface UpstreamModel {
 	id: string;
 	name?: string;
 	family?: string;
+	/** Upstream flags entries that are not yet generally available with released: false. */
+	released?: boolean;
 	reasoning?: boolean;
 	tool_call?: boolean;
 	temperature?: boolean;
@@ -66,6 +68,15 @@ export function isChatModel(model: UpstreamModel): boolean {
 	return !/embedding/i.test(model.family ?? "") && !RESPONSES_ONLY_MODELS.has(model.id.toLowerCase());
 }
 
+/**
+ * Skip entries upstream has marked `released: false` (announced but not yet
+ * generally available). An absent flag keeps the model so older snapshots
+ * without the field still regenerate identical catalogs.
+ */
+export function isReleased(model: UpstreamModel): boolean {
+	return model.released !== false;
+}
+
 const PI_INPUT = new Set(["text", "image"]);
 
 /** Map an upstream entry onto the chat-model shape pi expects. */
@@ -115,7 +126,11 @@ function capabilitySource(id: string, model: UpstreamModel): string {
 }
 
 export function buildModelsSource(models: UpstreamModel[]): string {
-	const chat = models.filter(isChatModel).map(toNeonModelInput).sort((a, b) => a.id.localeCompare(b.id));
+	// ANTHROPIC_MODELS is derived from this same list, so one filter covers both paths.
+	const chat = models
+		.filter((model) => isChatModel(model) && isReleased(model))
+		.map(toNeonModelInput)
+		.sort((a, b) => a.id.localeCompare(b.id));
 	const capEntries = chat
 		.map((entry) => {
 			const upstream = models.find((m) => m.id === entry.id);
@@ -148,7 +163,18 @@ interface NeonModelInput {
 	cost: { input: number; output: number; cacheRead: number; cacheWrite: number };
 }
 
-function base(entry: NeonModelInput) {
+interface CommonModelInput {
+	id: string;
+	name: string;
+	baseUrl: string;
+	reasoning: boolean;
+	input: ("text" | "image")[];
+	cost: { input: number; output: number; cacheRead: number; cacheWrite: number };
+	contextWindow: number;
+	maxTokens: number;
+}
+
+function base(entry: NeonModelInput): CommonModelInput {
 	return {
 		id: entry.id,
 		name: entry.name,
@@ -233,7 +259,8 @@ async function main(): Promise<void> {
 			: [];
 	const outPath = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "models.ts");
 	writeFileSync(outPath, buildModelsSource(models));
-	console.log(`Wrote ${outPath} with ${models.filter(isChatModel).length} chat models (from ${models.length} upstream entries).`);
+	const chatCount = models.filter((model) => isChatModel(model) && isReleased(model)).length;
+	console.log(`Wrote ${outPath} with ${chatCount} chat models (from ${models.length} upstream entries).`);
 }
 
 const invokedDirectly =

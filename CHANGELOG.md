@@ -13,6 +13,7 @@ All notable changes to `pi-provider-neon-ai-gateway` are documented here. Versio
 - 10 more chat models from `https://neon.com/models.json`: `claude-haiku-5-5`, `claude-sonnet-5-5`, `deepseek-v4-1-flash`, `gemini-3-7-flash`, `gemini-3-8-flash`, `glm-5-3`, `gpt-6-1-sol`, `gpt-6-luna`, `gpt-6-sol`, `grok-4-7`. Regenerate the catalog with `npm run update-models`.
 - `neon-anthropic` provider now also covers `claude-haiku-5-5` and `claude-sonnet-5-5`. The set is hardcoded in `scripts/update-models.ts` and reconciled with the upstream Anthropic Messages docs.
 - `npm run test:smoke` supports `--provider neon|neon-anthropic` and `--tools` for an echo-tool round trip. Both paths use the extension adapters. Without `--provider`, Claude uses Anthropic Messages and other models use chat completions.
+- The model catalog generator skips upstream entries marked `released: false`, so announced-but-unavailable models cannot reach the picker on a regen. An absent flag keeps the entry for backward compatibility.
 
 ### Changed
 
