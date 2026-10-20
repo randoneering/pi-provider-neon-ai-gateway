@@ -18,6 +18,8 @@ export interface UpstreamModel {
 	/** Upstream flags entries that are not yet generally available with released: false. */
 	released?: boolean;
 	reasoning?: boolean;
+	/** Upstream reasoning controls, e.g. [{ type: "effort", values: ["low", "high"] }] for OpenAI models. */
+	reasoning_options?: { type?: string; values?: string[] }[];
 	tool_call?: boolean;
 	temperature?: boolean;
 	modalities?: { input?: string[] };
@@ -42,7 +44,126 @@ interface NeonModelInput {
 	cost: { input: number; output: number; cacheRead: number; cacheWrite: number };
 }
 
-const RESPONSES_ONLY_MODELS = new Set(["gpt-5-3-codex", "gpt-5-5-pro"]);
+/**
+ * Canonical effort ladder used by Neon's OpenAI Responses endpoint
+ * (https://neon.com/docs/ai-gateway/openai-responses).
+ */
+const RESPONSES_EFFORT_LADDER = ["none", "low", "medium", "high", "xhigh"] as const;
+
+/**
+ * pi thinking levels (ModelThinkingLevel in @earendil-works/pi-ai:
+ * off | minimal | low | medium | high | xhigh | max) mapped onto the desired
+ * position in RESPONSES_EFFORT_LADDER. Levels the model does not support clamp
+ * upward to the nearest supported effort so the gateway never receives an
+ * effort value it rejects with 400.
+ */
+const PI_LEVEL_EFFORT_TARGET: Record<string, number> = {
+	off: 0,
+	minimal: 1,
+	low: 1,
+	medium: 2,
+	high: 3,
+	xhigh: 4,
+	max: 4,
+};
+
+interface ResponsesModelSpec {
+	id: string;
+	name: string;
+	reasoning: boolean;
+	input: ("text" | "image")[];
+	context: number;
+	output: number;
+	cost: { input: number; output: number; cacheRead: number; cacheWrite: number };
+	temperature: boolean;
+	toolCall: boolean;
+	efforts: readonly string[];
+}
+
+/**
+ * Catalog for the `neon-responses` provider. Per product decision, only the
+ * two Responses-only models are exposed on `/openai/v1/responses`; every
+ * other model stays on the `neon` chat provider. Effort values and metadata
+ * are reconciled against https://neon.com/models.json at generation time.
+ */
+const RESPONSES_MODEL_SPECS: ResponsesModelSpec[] = [
+	{
+		id: "gpt-5-3-codex",
+		name: "GPT-5.3 Codex",
+		reasoning: true,
+		input: ["text", "image"],
+		context: 400_000,
+		output: 128_000,
+		cost: { input: 1.75, output: 14, cacheRead: 0.175, cacheWrite: 0 },
+		temperature: true,
+		toolCall: true,
+		efforts: ["none", "low", "medium", "high", "xhigh"],
+	},
+	{
+		id: "gpt-5-5-pro",
+		name: "GPT-5.5 Pro",
+		reasoning: true,
+		input: ["text", "image"],
+		context: 1_050_000,
+		output: 128_000,
+		cost: { input: 30, output: 180, cacheRead: 0.175, cacheWrite: 0 },
+		temperature: false,
+		toolCall: true,
+		efforts: ["medium", "high", "xhigh"],
+	},
+];
+
+const RESPONSES_ONLY_MODELS = new Set(RESPONSES_MODEL_SPECS.map((spec) => spec.id));
+
+/**
+ * Reconcile a Responses-only model's upstream reasoning_options against the
+ * hardcoded effort values. The thinkingLevelMap is derived from these values,
+ * so upstream drift must fail the generation instead of emitting a wrong map.
+ */
+export function resolveResponsesEfforts(spec: ResponsesModelSpec, models: UpstreamModel[]): string[] {
+	const upstream = models.find((model) => model.id.toLowerCase() === spec.id);
+	if (!upstream || upstream.reasoning_options === undefined) return [...spec.efforts];
+	const option = upstream.reasoning_options.find((entry) => entry.type === "effort");
+	const actual = option?.values ?? [];
+	if (
+		actual.length !== spec.efforts.length ||
+		actual.some((value, index) => value !== spec.efforts[index])
+	) {
+		throw new Error(
+			`Upstream reasoning_options for ${spec.id} changed: expected [${spec.efforts.join(", ")}] but got [${actual.join(", ")}]. Update RESPONSES_MODEL_SPECS in scripts/update-models.ts and re-derive the thinkingLevelMap.`,
+		);
+	}
+	return [...spec.efforts];
+}
+
+/**
+ * Map pi thinking levels onto the model's supported effort values, clamping
+ * upward when a level is unsupported. For gpt-5-5-pro this maps off and low
+ * to "medium": the adapter would otherwise default effort to "none", which
+ * the gateway rejects with 400.
+ */
+export function thinkingLevelMapFor(efforts: readonly string[]): Record<string, string> {
+	const ladderRank = new Map<string, number>(
+		RESPONSES_EFFORT_LADDER.map((effort, index) => [effort, index] as const),
+	);
+	const unknown = efforts.filter((effort) => !ladderRank.has(effort));
+	if (unknown.length > 0) {
+		throw new Error(
+			`Effort values [${unknown.join(", ")}] are not on the known ladder [${RESPONSES_EFFORT_LADDER.join(", ")}]. Update RESPONSES_EFFORT_LADDER and PI_LEVEL_EFFORT_TARGET in scripts/update-models.ts.`,
+		);
+	}
+	const ranks = efforts.map((effort) => ladderRank.get(effort) as number);
+	if (efforts.length === 0) {
+		throw new Error("Effort values must not be empty; cannot derive a thinkingLevelMap.");
+	}
+	const fallback = efforts[efforts.length - 1] as string;
+	const map: Record<string, string> = {};
+	for (const [level, target] of Object.entries(PI_LEVEL_EFFORT_TARGET)) {
+		const index = ranks.findIndex((rank) => rank >= target);
+		map[level] = index === -1 ? fallback : (efforts[index] as string);
+	}
+	return map;
+}
 
 /**
  * Canonical Claude ids exposed on `/anthropic/v1/messages`. Mirrors the
@@ -126,10 +247,24 @@ function entrySourceAnthropic(entry: NeonModelInput): string {
 	return entrySource(entry).replace(/^\tm\(\{/u, "\tmAnthropic({");
 }
 
-function capabilitySource(id: string, model: UpstreamModel): string {
-	const temperature = model.temperature === true;
-	const toolCall = model.tool_call === true;
+function entrySourceResponses(entry: NeonModelInput, thinkingLevelMap: Record<string, string>): string {
+	const lines = entrySource(entry).split("\n");
+	const mapLines = [
+		"\t\tthinkingLevelMap: {",
+		...Object.entries(thinkingLevelMap).map(
+			([level, effort]) => `\t\t\t${level}: ${JSON.stringify(effort)},`,
+		),
+		"\t\t},",
+	];
+	return [...lines.slice(0, -1), ...mapLines, "\t}),"].join("\n");
+}
+
+function capabilityLine(id: string, temperature: boolean, toolCall: boolean): string {
 	return `\t${JSON.stringify(id)}: { temperature: ${temperature}, toolCall: ${toolCall} },`;
+}
+
+function capabilitySource(id: string, model: UpstreamModel): string {
+	return capabilityLine(id, model.temperature === true, model.tool_call === true);
 }
 
 export function buildModelsSource(models: UpstreamModel[]): string {
@@ -138,11 +273,22 @@ export function buildModelsSource(models: UpstreamModel[]): string {
 		.filter((model) => isChatModel(model) && isReleased(model))
 		.map(toNeonModelInput)
 		.sort((a, b) => a.id.localeCompare(b.id));
-	const capEntries = chat
-		.map((entry) => {
-			const upstream = models.find((m) => m.id === entry.id);
-			return capabilitySource(entry.id, upstream as UpstreamModel);
-		})
+	const capabilities = new Map<string, { temperature: boolean; toolCall: boolean }>();
+	for (const entry of chat) {
+		const upstream = models.find((model) => model.id === entry.id) as UpstreamModel;
+		capabilities.set(entry.id, { temperature: upstream.temperature === true, toolCall: upstream.tool_call === true });
+	}
+	const responses = RESPONSES_MODEL_SPECS.map((spec) => {
+		const upstream = models.find((model) => model.id.toLowerCase() === spec.id);
+		capabilities.set(spec.id, {
+			temperature: upstream ? upstream.temperature === true : spec.temperature,
+			toolCall: upstream ? upstream.tool_call === true : spec.toolCall,
+		});
+		return { spec, thinkingLevelMap: thinkingLevelMapFor(resolveResponsesEfforts(spec, models)) };
+	});
+	const capEntries = Array.from(capabilities.entries())
+		.sort(([a], [b]) => a.localeCompare(b))
+		.map(([id, cap]) => capabilityLine(id, cap.temperature, cap.toolCall))
 		.join("\n");
 	const anthropicEntries = chat
 		.filter((entry) => ANTHROPIC_MODEL_IDS.has(entry.id))
@@ -155,10 +301,11 @@ export function buildModelsSource(models: UpstreamModel[]): string {
 // Costs are USD per million tokens. cacheRead/cacheWrite come from the
 // upstream cache_read/cache_write price keys and default to 0 when omitted.
 
-import type { Model } from "@earendil-works/pi-ai";
+import type { Model, ThinkingLevelMap } from "@earendil-works/pi-ai";
 
 type Api = "openai-completions";
 type AnthropicApi = "anthropic-messages";
+type ResponsesApi = "openai-responses";
 
 interface NeonModelInput {
 	id: string;
@@ -200,6 +347,19 @@ function m(entry: NeonModelInput): Model<Api> {
 
 function mAnthropic(entry: NeonModelInput): Model<AnthropicApi> {
 	return { ...base(entry), api: "anthropic-messages", provider: "neon-anthropic" };
+}
+
+interface ResponsesModelInput extends NeonModelInput {
+	thinkingLevelMap: ThinkingLevelMap;
+}
+
+function mResponses(entry: ResponsesModelInput): Model<ResponsesApi> {
+	return {
+		...base(entry),
+		api: "openai-responses",
+		provider: "neon-responses",
+		thinkingLevelMap: entry.thinkingLevelMap,
+	};
 }
 
 export const NEON_MODELS: Model<"openai-completions">[] = [
@@ -246,6 +406,23 @@ ${anthropicIds.map((id) => `\t${JSON.stringify(id)},`).join("\n")}
  */
 export const ANTHROPIC_MODELS: Model<AnthropicApi>[] = [
 ${anthropicEntries.map(entrySourceAnthropic).join("\n")}
+];
+
+/**
+ * Responses-only catalog for the \`/openai/v1/responses\` endpoint, exposed
+ * on the \`neon-responses\` provider. Hardcoded in scripts/update-models.ts
+ * per product decision (all other models stay on the chat provider) and
+ * reconciled with the upstream reasoning_options at generation time.
+ * thinkingLevelMap maps pi thinking levels onto upstream effort values,
+ * clamping upward when a level is unsupported so the gateway never sees a
+ * rejected effort (e.g. "none" for gpt-5-5-pro).
+ */
+export const RESPONSES_MODELS: Model<ResponsesApi>[] = [
+${responses
+	.map(({ spec, thinkingLevelMap }) =>
+		entrySourceResponses(spec as NeonModelInput, thinkingLevelMap).replace(/^\tm\(\{/u, "\tmResponses({"),
+	)
+	.join("\n")}
 ];
 `;
 }
