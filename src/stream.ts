@@ -100,10 +100,11 @@ export function transformNeonPayload(value: unknown, modelId: string): unknown {
 		removeKeys(payload, ["frequency_penalty", "presence_penalty", "seed"]);
 	} else if (id.includes("glm") || id.includes("inkling") || id.includes("kimi")) {
 		removeKeys(payload, ["frequency_penalty", "presence_penalty"]);
-	} else if (id === "gpt-5-6-luna") {
+	} else if (id === "gpt-5-6-luna" || id === "gpt-6-luna") {
 		// The gateway rejects function tools unless reasoning_effort is
 		// explicitly "none" in chat completions. Omitting the field leaves
 		// the model's default effort, which is rejected too, so set it.
+		// Live GPT-6 Luna tool checks confirm this despite the catalog omitting "none".
 		if (payload.tools !== undefined) payload.reasoning_effort = "none";
 	} else {
 		// Unknown models keep sampling fields until the upstream contract is known.
