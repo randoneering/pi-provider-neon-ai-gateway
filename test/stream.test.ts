@@ -108,6 +108,21 @@ describe("transformNeonPayload", () => {
 	});
 
 	describe("Luna family", () => {
+		it.each(["gpt-6-luna", "DATABRICKS-GPT-6-LUNA"])("uses the gateway-required tool effort for %s", (id) => {
+			for (const effort of [undefined, "low", "high"]) {
+				const result = transformNeonPayload(withBase({
+					reasoning_effort: effort,
+					tools: [{ type: "function", function: { name: "smoke_echo", parameters: {} } }],
+				}), id) as Record<string, unknown>;
+				expect(result.reasoning_effort).toBe("none");
+			}
+		});
+
+		it("preserves GPT-6 reasoning without Luna tools", () => {
+			expect((transformNeonPayload(withBase({ reasoning_effort: "high" }), "gpt-6-luna") as Record<string, unknown>).reasoning_effort).toBe("high");
+			expect((transformNeonPayload(withBase({ reasoning_effort: "low", tools: [] }), "gpt-6-sol") as Record<string, unknown>).reasoning_effort).toBe("low");
+		});
+
 		it("forces reasoning_effort none for gpt-5-6-luna when tools are present", () => {
 			const result = transformNeonPayload(
 				withBase({

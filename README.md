@@ -217,6 +217,20 @@ npm run check          # type check
 npm run test:smoke     # hits a real Neon endpoint (needs NEON_AI_GATEWAY_TOKEN + NEON_AI_GATEWAY_BASE_URL)
 ```
 
+Smoke tests use the extension's adapters and bill real gateway usage.
+Choose a provider explicitly to compare the same Claude model on both endpoints:
+
+```bash
+npm run test:smoke -- claude-sonnet-4-6 --provider neon
+npm run test:smoke -- claude-sonnet-4-6 --provider neon-anthropic --tools
+npm run test:smoke -- gpt-6-luna --provider neon --tools --thinking
+```
+
+Without `--provider`, Claude models use `neon-anthropic`; other models use `neon`.
+`--tools` checks one local echo-tool call and its follow-up reply, with at most two requests.
+The check fails on gateway errors, missing or unexpected tool calls, truncated responses, or a reply other than `smoke test ok`.
+Luna chat-completions tool calls use `reasoning_effort: "none"`, even with `--thinking`, because the gateway requires it.
+
 ## Docs
 
 - [Overview](https://neon.com/docs/ai-gateway/overview)
