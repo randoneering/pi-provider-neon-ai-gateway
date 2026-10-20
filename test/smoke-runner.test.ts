@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { FetchFunction, SimpleStreamOptions } from "@earendil-works/pi-ai/compat";
+import type { AssistantMessage, FetchFunction, SimpleStreamOptions } from "@earendil-works/pi-ai/compat";
+import { streamNeon } from "../src/stream.js";
 import { parseSmokeArgs, runSmoke, selectSmokeModel } from "./helpers/smoke-runner.js";
 
 const OK = "smoke test ok";
@@ -99,6 +100,94 @@ describe("smoke arguments and routing", () => {
 });
 
 describe("smoke runner through real extension adapters", () => {
+	it("keeps Gemini streaming but removes stream_options before the request reaches fetch", async () => {
+		const { fetch, requests } = captureFetch([() => chatResponse(OK)]);
+		await runSmoke(parseSmokeArgs(["gemini-3-8-flash", "--provider=neon"]), streamOptions(fetch));
+		expect(requests[0]?.body.stream).toBe(true);
+		expect(requests[0]?.body).not.toHaveProperty("stream_options");
+	});
+
+	it("normalizes Gemini's stop after tool calls and resets state for the next request", async () => {
+		const { fetch, requests } = captureFetch([
+			() => chatResponse([{ index: 0, id: "call_test", type: "function", function: {
+				name: "smoke_echo", arguments: JSON.stringify({ message: OK }),
+			} }], "stop"),
+			() => chatResponse(OK),
+		]);
+		const result = await runSmoke(parseSmokeArgs(["gemini-3-8-flash", "--tools"]), streamOptions(fetch));
+		expect(result.map((message) => message.stopReason)).toEqual(["toolUse", "stop"]);
+		expect(requests).toHaveLength(2);
+	});
+
+	it("preserves Gemini thought signatures through assistant history and tool replay", async () => {
+		const { fetch, requests } = captureFetch([
+			() => chatResponse([{ index: 0, id: "call_test", type: "function", thoughtSignature: "fake-opaque-signature", function: {
+				name: "smoke_echo", arguments: JSON.stringify({ message: OK }),
+			} }], "stop"),
+			() => chatResponse(OK),
+		]);
+		const result = await runSmoke(parseSmokeArgs(["gemini-3-8-flash", "--tools"]), streamOptions(fetch));
+		expect(JSON.stringify(result[0])).toContain("fake-opaque-signature");
+		expect(requests[1]?.body.messages).toEqual(expect.arrayContaining([
+			expect.objectContaining({ role: "assistant", tool_calls: expect.arrayContaining([
+				expect.objectContaining({ id: "call_test", thoughtSignature: "fake-opaque-signature" }),
+			]) }),
+		]));
+		for (const message of requests[1]?.body.messages as Record<string, unknown>[]) {
+			expect(message).not.toHaveProperty("reasoning_details");
+		}
+
+		const saved = JSON.parse(JSON.stringify(result[0])) as AssistantMessage;
+		const replay = captureFetch([() => chatResponse(OK)]);
+		await streamNeon(selectSmokeModel(parseSmokeArgs(["gemini-3-8-flash"])), {
+			messages: [
+				{ role: "user", content: "Echo a message", timestamp: 0 },
+				saved,
+				{ role: "toolResult", toolCallId: "call_test", toolName: "smoke_echo", content: [{ type: "text", text: OK }], isError: false, timestamp: 1 },
+			],
+		}, streamOptions(replay.fetch)).result();
+		const replayedAssistant = (replay.requests[0]?.body.messages as Record<string, unknown>[]).find((message) => message.role === "assistant");
+		const originalAssistant = (requests[1]?.body.messages as Record<string, unknown>[]).find((message) => message.role === "assistant");
+		expect(replayedAssistant).toEqual(originalAssistant);
+	});
+
+	it("preserves a later signature delta across fragmented UTF-8 and CRLF frames", async () => {
+		const signature = "fake-opaque-雪";
+		const deltas = [
+			{ tool_calls: [{ index: 0, id: "call_test", type: "function", function: { name: "smoke_echo", arguments: JSON.stringify({ message: OK }) } }] },
+			{ tool_calls: [{ index: 0, thoughtSignature: signature }] },
+			{},
+		];
+		const bytes = new TextEncoder().encode(deltas.map((delta, index) =>
+			`data: ${JSON.stringify({ choices: [{ index: 0, delta, finish_reason: index === 2 ? "stop" : null }] })}\r\n\r\n`,
+		).join("") + "data: [DONE]\r\n\r\n");
+		const { fetch, requests } = captureFetch([
+			() => new Response(new ReadableStream<Uint8Array>({ start(controller) {
+				for (let offset = 0; offset < bytes.length; offset += 7) controller.enqueue(bytes.slice(offset, offset + 7));
+				controller.close();
+			} }), { headers: { "content-type": "text/event-stream" } }),
+			() => chatResponse(OK),
+		]);
+		await runSmoke(parseSmokeArgs(["gemini-3-8-flash", "--tools"]), streamOptions(fetch));
+		expect(requests[1]?.body.messages).toEqual(expect.arrayContaining([
+			expect.objectContaining({ tool_calls: expect.arrayContaining([
+				expect.objectContaining({ id: "call_test", thoughtSignature: signature }),
+			]) }),
+		]));
+	});
+
+	it("does not rewrite a non-Gemini tool stop or hide a truncated Gemini tool call", async () => {
+		for (const [id, finish, expected] of [
+			["gpt-6-sol", "stop", /tool call/],
+			["gemini-3-8-flash", "length", /length/],
+		] as const) {
+			const { fetch } = captureFetch([() => chatResponse([{ index: 0, id: "call_test", type: "function", function: {
+				name: "smoke_echo", arguments: JSON.stringify({ message: OK }),
+			} }], finish)]);
+			await expect(runSmoke(parseSmokeArgs([id, "--tools"]), streamOptions(fetch))).rejects.toThrow(expected);
+		}
+	});
+
 	it("uses the chat adapter and stored URL normalization for explicit Claude chat", async () => {
 		const { fetch, requests } = captureFetch([() => chatResponse(OK)]);
 		const results = await runSmoke(parseSmokeArgs(["claude-sonnet-4-6", "--provider=neon"]), streamOptions(fetch));

@@ -12,6 +12,8 @@
  *   reasoning blocks) into the `content` + `reasoning_content` shape that
  *   pi-ai's openai-completions parser expects, so reasoning shows up in
  *   pi's thinking block.
+ * - Preserves Gemini tool signatures through pi's replay metadata and
+ *   corrects tool-call finish reasons.
  * - Wraps Neon's flat error responses in the nested `{ error: { message } }`
  *   shape expected by pi's overflow detector and error handling.
  */
@@ -39,6 +41,20 @@ import { canonicalModelId, MODEL_CAPABILITIES } from "./models.js";
 
 type NeonApi = "openai-completions";
 
+// Native Messages thinking modes from Neon's Anthropic endpoint contract.
+const CLAUDE_THINKING_MODES: Record<string, "adaptive" | "always-adaptive" | "between-tools"> = {
+	"claude-opus-4-7": "adaptive",
+	"claude-opus-4-8": "adaptive",
+	"claude-opus-5": "adaptive",
+	"claude-opus-5-5": "always-adaptive",
+	"claude-sonnet-5": "adaptive",
+	"claude-sonnet-5-5": "between-tools",
+	// The native endpoint rejects budget thinking despite Haiku 5.5's catalog metadata.
+	"claude-haiku-5-5": "adaptive",
+	"claude-fable-5": "always-adaptive",
+	"claude-fable-5-1": "always-adaptive",
+};
+
 // ---------------------------------------------------------------------------
 // Payload transformations
 // ---------------------------------------------------------------------------
@@ -59,6 +75,30 @@ function stripJsonSchemaMarker(value: unknown): unknown {
 
 function removeKeys(payload: Record<string, unknown>, keys: readonly string[]): void {
 	for (const key of keys) delete payload[key];
+}
+
+function replayGeminiSignatures(messages: unknown): unknown {
+	if (!Array.isArray(messages)) return messages;
+	return messages.map((message) => {
+		if (
+			!isRecord(message) || message.role !== "assistant" ||
+			!Array.isArray(message.reasoning_details) || !Array.isArray(message.tool_calls)
+		) return message;
+		const signatures = message.reasoning_details.filter((detail): detail is Record<string, unknown> =>
+			isRecord(detail) && detail.type === "reasoning.encrypted" && detail.format === "neon-gemini" &&
+			typeof detail.id === "string" && typeof detail.data === "string" && detail.data.length > 0,
+		);
+		if (signatures.length === 0) return message;
+		const result: Record<string, unknown> = { ...message, tool_calls: message.tool_calls.map((tool) => {
+			if (!isRecord(tool)) return tool;
+			const signature = signatures.find((detail) => detail.id === tool.id);
+			return signature ? { ...tool, thoughtSignature: signature.data } : tool;
+		}) };
+		const remaining = message.reasoning_details.filter((detail) => !signatures.includes(detail));
+		if (remaining.length > 0) result.reasoning_details = remaining;
+		else delete result.reasoning_details;
+		return result;
+	});
 }
 
 /**
@@ -88,10 +128,11 @@ export function transformNeonPayload(value: unknown, modelId: string): unknown {
 		if (!acceptsSampling) removeKeys(payload, ["temperature", "top_p"]);
 		else if (payload.temperature !== undefined) delete payload.top_p;
 	} else if (/^gemini-3-/u.test(id)) {
-		// gemini-3 rejects frequency_penalty and presence_penalty outright.
-		// temperature/top_p are handled by the metadata layer above when
-		// the upstream marks the model as not supporting them.
-		removeKeys(payload, ["frequency_penalty", "presence_penalty"]);
+		// The gateway forwards stream_options into Gemini's generation_config,
+		// which rejects it. Omitting the usage option keeps streaming enabled.
+		// Sampling support comes from the metadata layer above.
+		removeKeys(payload, ["frequency_penalty", "presence_penalty", "stream_options"]);
+		if (payload.messages !== undefined) payload.messages = replayGeminiSignatures(payload.messages);
 	} else if (id.includes("llama")) {
 		removeKeys(payload, ["frequency_penalty", "presence_penalty", "seed"]);
 	} else if (id.includes("gpt-oss")) {
@@ -175,11 +216,40 @@ export function extractArrayContent(content: unknown): { text: string; reasoning
 	return { text: text.join(""), reasoning: reasoning.join("\n") };
 }
 
-function normalizeChunk(value: unknown): { body: unknown; changed: boolean } {
+interface GeminiStreamState {
+	toolChoices: Set<number>;
+	toolIds: Map<string, string>;
+}
+
+function normalizeChunk(value: unknown, gemini?: GeminiStreamState): { body: unknown; changed: boolean } {
 	if (!isRecord(value) || !Array.isArray(value.choices)) return { body: value, changed: false };
 	let changed = false;
 	for (const choice of value.choices) {
-		if (!isRecord(choice) || !isRecord(choice.delta)) continue;
+		if (!isRecord(choice)) continue;
+		if (gemini) {
+			const index = typeof choice.index === "number" ? choice.index : 0;
+			if (isRecord(choice.delta) && Array.isArray(choice.delta.tool_calls) && choice.delta.tool_calls.length > 0) {
+				gemini.toolChoices.add(index);
+				for (const [position, tool] of choice.delta.tool_calls.entries()) {
+					if (!isRecord(tool)) continue;
+					const key = `${index}:${typeof tool.index === "number" ? tool.index : position}`;
+					if (typeof tool.id === "string") gemini.toolIds.set(key, tool.id);
+					const id = gemini.toolIds.get(key);
+					if (!id || typeof tool.thoughtSignature !== "string" || !tool.thoughtSignature) continue;
+					// pi persists reasoning_details in thinkingSignature, unlike unknown tool fields.
+					const details = Array.isArray(choice.delta.reasoning_details) ? choice.delta.reasoning_details : [];
+					choice.delta.reasoning_details = [...details, {
+						type: "reasoning.encrypted", format: "neon-gemini", id, data: tool.thoughtSignature,
+					}];
+					changed = true;
+				}
+			}
+			if (choice.finish_reason === "stop" && gemini.toolChoices.has(index)) {
+				choice.finish_reason = "tool_calls";
+				changed = true;
+			}
+		}
+		if (!isRecord(choice.delta)) continue;
 		const extracted = extractArrayContent(choice.delta.content);
 		if (!extracted) continue;
 		changed = true;
@@ -191,17 +261,19 @@ function normalizeChunk(value: unknown): { body: unknown; changed: boolean } {
 	return { body: value, changed };
 }
 
-function normalizeEventStream(body: ReadableStream<Uint8Array>): ReadableStream<Uint8Array> {
+function normalizeEventStream(body: ReadableStream<Uint8Array>, isGemini: boolean): ReadableStream<Uint8Array> {
+	// Gemini can label a completed tool call as "stop" in a later chunk.
+	const gemini = isGemini ? { toolChoices: new Set<number>(), toolIds: new Map<string, string>() } : undefined;
 	const decoder = new TextDecoder();
 	const encoder = new TextEncoder();
 	let buffer = "";
 	const rewriteLine = (line: string): string => {
-		const match = /^\s*data:(.*)$/u.exec(line);
+		const match = /^\s*data:(.*)\r?$/u.exec(line);
 		if (!match) return line;
 		const payload = (match[1] ?? "").trim();
 		if (!payload || payload === "[DONE]") return line;
 		try {
-			const normalized = normalizeChunk(JSON.parse(payload));
+			const normalized = normalizeChunk(JSON.parse(payload), gemini);
 			return normalized.changed ? `data: ${JSON.stringify(normalized.body)}` : line;
 		} catch {
 			return line;
@@ -287,13 +359,13 @@ export function enrichRateLimitMessage(body: unknown, retryAfterHeader: string |
 	};
 }
 
-function makeNeonFetch(baseFetch: FetchFunction | undefined, isArrayContentModel: boolean): FetchFunction {
+function makeNeonFetch(baseFetch: FetchFunction | undefined, isArrayContentModel: boolean, isGemini = false): FetchFunction {
 	const request = baseFetch ?? globalThis.fetch;
 	return async (input, init) => {
 		const response = await request(input, init);
 		const contentType = response.headers.get("content-type") ?? "";
-		if (response.ok && response.body && isArrayContentModel && contentType.includes("text/event-stream")) {
-			return new Response(normalizeEventStream(response.body), {
+		if (response.ok && response.body && (isArrayContentModel || isGemini) && contentType.includes("text/event-stream")) {
+			return new Response(normalizeEventStream(response.body, isGemini), {
 				status: response.status,
 				statusText: response.statusText,
 				headers: rewrittenHeaders(response.headers),
@@ -393,7 +465,7 @@ export function streamNeon(model: Model<Api>, context: Context, options?: Simple
 	const userOnPayload = options?.onPayload;
 	const wrappedOptions: SimpleStreamOptions = {
 		...options,
-		fetch: makeNeonFetch(options?.fetch, useArrayContent),
+		fetch: makeNeonFetch(options?.fetch, useArrayContent, /^gemini-3-/u.test(canonicalModelId(model.id))),
 		onPayload: async (payload, m) => {
 			const transformed = transformNeonPayload(payload, m.id);
 			if (!userOnPayload) return transformed;
@@ -408,11 +480,9 @@ export function streamNeon(model: Model<Api>, context: Context, options?: Simple
 /**
  * Stream adapter for the `/anthropic/v1/messages` endpoint.
  *
- * The Anthropic SDK handles request shape, response shape, and SSE
- * parsing, so this wrapper only resolves the effective base URL and
- * delegates to `pi-ai`'s built-in `anthropicMessagesApi` stream. Per-model
- * field stripping is unnecessary because the SDK forwards the Claude
- * options (extended thinking, prompt caching, tool choice) directly.
+ * Keep the SDK's native parsing and cache handling, but configure the
+ * thinking modes that the gateway requires for newer Claude models.
+ * https://neon.com/docs/ai-gateway/anthropic-messages#extended-thinking
  */
 export function streamNeonAnthropic(
 	model: Model<Api>,
@@ -435,10 +505,32 @@ export function streamNeonAnthropic(
 		return missingBaseUrlStream(model);
 	}
 
-	const resolvedModel: Model<"anthropic-messages"> =
-		model.baseUrl === baseUrl
-			? (model as Model<"anthropic-messages">)
-			: ({ ...model, baseUrl } as Model<"anthropic-messages">);
+	const nativeModel = model as Model<"anthropic-messages">;
+	const id = canonicalModelId(model.id);
+	const mode = CLAUDE_THINKING_MODES[id];
+	const resolvedModel: Model<"anthropic-messages"> = {
+		...nativeModel,
+		baseUrl,
+		compat: {
+			...nativeModel.compat,
+			...(mode ? { forceAdaptiveThinking: true } : {}),
+			...(MODEL_CAPABILITIES[id]?.temperature === false ? { supportsTemperature: false } : {}),
+		},
+	};
+	const wrappedOptions: SimpleStreamOptions = {
+		...options,
+		// These models cannot disable thinking; use the lowest supported effort.
+		reasoning: options?.reasoning ?? (mode === "always-adaptive" ? "low" : undefined),
+	};
+	if (mode === "between-tools") {
+		wrappedOptions.onPayload = async (payload, m) => {
+			const transformed = isRecord(payload) && isRecord(payload.thinking) && payload.thinking.type === "disabled"
+				? { ...payload, thinking: { type: "between_tools" } }
+				: payload;
+			const result = await options?.onPayload?.(transformed, m);
+			return result === undefined ? transformed : result;
+		};
+	}
 
-	return anthropicMessagesApi().streamSimple(resolvedModel, context, options);
+	return anthropicMessagesApi().streamSimple(resolvedModel, context, wrappedOptions);
 }
