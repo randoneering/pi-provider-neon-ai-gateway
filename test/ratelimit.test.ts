@@ -58,6 +58,15 @@ describe("Neon rate-limit capture", () => {
 		responseHandler(null);
 		responseHandler({ provider: "neon-anthropic", headers: null });
 		expect(getNeonRateLimitState().capturedAt).toBeUndefined();
+		resetNeonRateLimitState();
+		responseHandler({ provider: "neon-responses", headers: { "Retry-After": "14" } });
+		expect(getNeonRateLimitState().values["Retry-After"]).toBe("14");
+		resetNeonRateLimitState();
+		responseHandler({ model: { providerId: "neon-responses" }, headers: { "Retry-After": "15" } });
+		expect(getNeonRateLimitState().values["Retry-After"]).toBe("15");
+		resetNeonRateLimitState();
+		responseHandler({ provider: "neon-responses-extra", headers: { "Retry-After": "16" } });
+		expect(getNeonRateLimitState().capturedAt).toBeUndefined();
 	});
 
 	it("handles missing headers gracefully", () => {

@@ -1,6 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-const NEON_PROVIDER_IDS = ["neon", "neon-anthropic"] as const;
+const NEON_PROVIDER_IDS = ["neon", "neon-anthropic", "neon-responses"] as const;
 
 const RATE_LIMIT_HEADERS = [
 	"Retry-After",

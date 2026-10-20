@@ -4,10 +4,11 @@
 // Costs are USD per million tokens. cacheRead/cacheWrite come from the
 // upstream cache_read/cache_write price keys and default to 0 when omitted.
 
-import type { Model } from "@earendil-works/pi-ai";
+import type { Model, ThinkingLevelMap } from "@earendil-works/pi-ai";
 
 type Api = "openai-completions";
 type AnthropicApi = "anthropic-messages";
+type ResponsesApi = "openai-responses";
 
 interface NeonModelInput {
 	id: string;
@@ -49,6 +50,19 @@ function m(entry: NeonModelInput): Model<Api> {
 
 function mAnthropic(entry: NeonModelInput): Model<AnthropicApi> {
 	return { ...base(entry), api: "anthropic-messages", provider: "neon-anthropic" };
+}
+
+interface ResponsesModelInput extends NeonModelInput {
+	thinkingLevelMap: ThinkingLevelMap;
+}
+
+function mResponses(entry: ResponsesModelInput): Model<ResponsesApi> {
+	return {
+		...base(entry),
+		api: "openai-responses",
+		provider: "neon-responses",
+		thinkingLevelMap: entry.thinkingLevelMap,
+	};
 }
 
 export const NEON_MODELS: Model<"openai-completions">[] = [
@@ -589,10 +603,12 @@ export const MODEL_CAPABILITIES: Record<string, NeonModelCapabilities> = {
 	"gpt-5": { temperature: false, toolCall: true },
 	"gpt-5-1": { temperature: true, toolCall: true },
 	"gpt-5-2": { temperature: true, toolCall: true },
+	"gpt-5-3-codex": { temperature: true, toolCall: true },
 	"gpt-5-4": { temperature: true, toolCall: true },
 	"gpt-5-4-mini": { temperature: true, toolCall: true },
 	"gpt-5-4-nano": { temperature: true, toolCall: true },
 	"gpt-5-5": { temperature: false, toolCall: true },
+	"gpt-5-5-pro": { temperature: false, toolCall: true },
 	"gpt-5-6-luna": { temperature: false, toolCall: true },
 	"gpt-5-6-sol": { temperature: false, toolCall: true },
 	"gpt-5-6-terra": { temperature: false, toolCall: true },
@@ -790,5 +806,53 @@ export const ANTHROPIC_MODELS: Model<AnthropicApi>[] = [
 		context: 1_000_000,
 		output: 128_000,
 		cost: { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 },
+	}),
+];
+
+/**
+ * Responses-only catalog for the `/openai/v1/responses` endpoint, exposed
+ * on the `neon-responses` provider. Hardcoded in scripts/update-models.ts
+ * per product decision (all other models stay on the chat provider) and
+ * reconciled with the upstream reasoning_options at generation time.
+ * thinkingLevelMap maps pi thinking levels onto upstream effort values,
+ * clamping upward when a level is unsupported so the gateway never sees a
+ * rejected effort (e.g. "none" for gpt-5-5-pro).
+ */
+export const RESPONSES_MODELS: Model<ResponsesApi>[] = [
+	mResponses({
+		id: "gpt-5-3-codex",
+		name: "GPT-5.3 Codex",
+		reasoning: true,
+		input: ["text", "image"],
+		context: 400_000,
+		output: 128_000,
+		cost: { input: 1.75, output: 14, cacheRead: 0.175, cacheWrite: 0 },
+		thinkingLevelMap: {
+			off: "none",
+			minimal: "low",
+			low: "low",
+			medium: "medium",
+			high: "high",
+			xhigh: "xhigh",
+			max: "xhigh",
+		},
+	}),
+	mResponses({
+		id: "gpt-5-5-pro",
+		name: "GPT-5.5 Pro",
+		reasoning: true,
+		input: ["text", "image"],
+		context: 1_050_000,
+		output: 128_000,
+		cost: { input: 30, output: 180, cacheRead: 0.175, cacheWrite: 0 },
+		thinkingLevelMap: {
+			off: "medium",
+			minimal: "medium",
+			low: "medium",
+			medium: "medium",
+			high: "high",
+			xhigh: "xhigh",
+			max: "xhigh",
+		},
 	}),
 ];

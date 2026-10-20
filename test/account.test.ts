@@ -69,16 +69,17 @@ describe("aggregateLocalSpend", () => {
 		expect(result.sessionCount).toBe(1);
 	});
 
-	it("counts neon-anthropic alongside neon but excludes unrelated and near-matching providers", async () => {
+	it("counts neon-anthropic and neon-responses alongside neon but excludes unrelated and near-matching providers", async () => {
 		const sessionsDir = join(tempDir, "sessions", "proj-a");
 		mkdirSync(sessionsDir, { recursive: true });
 		const anthropic = JSON.stringify({ type: "message", message: { ...sampleUsage(0.02), provider: "neon-anthropic" } });
+		const responses = JSON.stringify({ type: "message", message: { ...sampleUsage(0.01), provider: "neon-responses" } });
 		const unrelated = JSON.stringify({ type: "message", message: { ...sampleUsage(50), provider: "other-neon" } });
 		const nearMatch = JSON.stringify({ type: "message", message: { ...sampleUsage(50), provider: "neon-anthropic-extra" } });
-		writeFileSync(join(sessionsDir, "session-1.jsonl"), [sampleMessageLine(0.01), anthropic, unrelated, nearMatch].join("\n"));
+		writeFileSync(join(sessionsDir, "session-1.jsonl"), [sampleMessageLine(0.01), anthropic, responses, unrelated, nearMatch].join("\n"));
 
 		const result = await accountModule.aggregateLocalSpend(tempDir);
-		expect(result.totalCost).toBeCloseTo(0.03, 6);
+		expect(result.totalCost).toBeCloseTo(0.04, 6);
 		expect(result.sessionCount).toBe(1);
 	});
 

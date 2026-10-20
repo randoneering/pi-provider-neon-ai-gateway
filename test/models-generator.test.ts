@@ -75,7 +75,7 @@ describe("buildModelsSource", () => {
 		const b = buildModelsSource([{ id: "gpt-5", name: "GPT-5", temperature: false, tool_call: true }, fixture]);
 		expect(a).toBe(b);
 
-		expect(a).toContain('import type { Model } from "@earendil-works/pi-ai";');
+		expect(a).toContain('import type { Model, ThinkingLevelMap } from "@earendil-works/pi-ai";');
 		expect(a).toContain("export const NEON_MODELS");
 		expect(a).toContain("export const MODEL_CAPABILITIES");
 		expect(a).toContain("export function canonicalModelId");
@@ -122,8 +122,106 @@ describe("buildModelsSource", () => {
 			{ id: "gpt-5-5-pro", family: "gpt-5" },
 			{ id: "gpt-5-5", family: "gpt-5" },
 		]);
-		expect(source).not.toContain("gpt-5-3-codex");
-		expect(source).not.toContain("gpt-5-5-pro");
-		expect(source).toContain('id: "gpt-5-5"');
+		const neonSection = source.slice(
+			source.indexOf("export const NEON_MODELS"),
+			source.indexOf("export interface NeonModelCapabilities"),
+		);
+		expect(neonSection).not.toContain("gpt-5-3-codex");
+		expect(neonSection).not.toContain("gpt-5-5-pro");
+		expect(neonSection).toContain('id: "gpt-5-5"');
+	});
+});
+
+const codexFixture: UpstreamModel = {
+	id: "gpt-5-3-codex",
+	name: "GPT-5.3 Codex",
+	family: "gpt-codex",
+	released: true,
+	reasoning: true,
+	reasoning_options: [{ type: "effort", values: ["none", "low", "medium", "high", "xhigh"] }],
+	tool_call: true,
+	temperature: true,
+	modalities: { input: ["text", "image", "pdf"] },
+	limit: { context: 400000, output: 128000 },
+	cost: { input: 1.75, output: 14, cache_read: 0.175 },
+};
+
+const proFixture: UpstreamModel = {
+	id: "gpt-5-5-pro",
+	name: "GPT-5.5 Pro",
+	family: "gpt-pro",
+	released: true,
+	reasoning: true,
+	reasoning_options: [{ type: "effort", values: ["medium", "high", "xhigh"] }],
+	tool_call: true,
+	temperature: false,
+	modalities: { input: ["text", "image", "pdf"] },
+	limit: { context: 1050000, output: 128000 },
+	cost: { input: 30, output: 180, cache_read: 0.175 },
+};
+
+function responsesEntryBlock(source: string, id: string): string {
+	const responsesSection = source.slice(source.indexOf("export const RESPONSES_MODELS"));
+	const start = responsesSection.indexOf(`id: ${JSON.stringify(id)}`);
+	if (start === -1) return "";
+	const end = responsesSection.indexOf("\t}),", start);
+	return responsesSection.slice(start, end);
+}
+
+describe("RESPONSES_MODELS", () => {
+	it("exposes exactly the two Responses-only models on the neon-responses provider", () => {
+		const source = buildModelsSource([codexFixture, proFixture, fixture]);
+		expect(source).toContain("export const RESPONSES_MODELS");
+		expect(source).toContain('api: "openai-responses"');
+		expect(source).toContain('provider: "neon-responses"');
+		expect(responsesEntryBlock(source, "gpt-5-3-codex")).not.toBe("");
+		expect(responsesEntryBlock(source, "gpt-5-5-pro")).not.toBe("");
+		expect(responsesEntryBlock(source, "gpt-5")).toBe("");
+	});
+
+	it("carries upstream pricing and limits for the Responses models", () => {
+		const source = buildModelsSource([codexFixture, proFixture]);
+		const codex = responsesEntryBlock(source, "gpt-5-3-codex");
+		expect(codex).toContain('cost: { input: 1.75, output: 14, cacheRead: 0.175, cacheWrite: 0 },');
+		expect(codex).toContain("context: 400_000,");
+		const pro = responsesEntryBlock(source, "gpt-5-5-pro");
+		expect(pro).toContain('cost: { input: 30, output: 180, cacheRead: 0.175, cacheWrite: 0 },');
+		expect(pro).toContain("context: 1_050_000,");
+	});
+
+	it("maps pi thinking levels onto effort values, clamping upward when unsupported", () => {
+		const source = buildModelsSource([codexFixture, proFixture]);
+		const codex = responsesEntryBlock(source, "gpt-5-3-codex");
+		expect(codex).toContain('off: "none",');
+		expect(codex).toContain('low: "low",');
+		expect(codex).toContain('xhigh: "xhigh",');
+		expect(codex).toContain('max: "xhigh",');
+		expect(codex).not.toContain('off: "medium"');
+		const pro = responsesEntryBlock(source, "gpt-5-5-pro");
+		expect(pro).toContain('off: "medium",');
+		expect(pro).toContain('low: "medium",');
+		expect(pro).toContain('medium: "medium",');
+		expect(pro).toContain('high: "high",');
+		expect(pro).toContain('xhigh: "xhigh",');
+		expect(pro).not.toContain('off: "none"');
+	});
+
+	it("keeps Responses temperature metadata consistent with upstream in MODEL_CAPABILITIES", () => {
+		const source = buildModelsSource([codexFixture, proFixture]);
+		expect(source).toContain('"gpt-5-3-codex": { temperature: true, toolCall: true },');
+		expect(source).toContain('"gpt-5-5-pro": { temperature: false, toolCall: true },');
+	});
+
+	it("fails loudly when upstream reasoning_options drift from the hardcoded effort values", () => {
+		const drifted: UpstreamModel = {
+			...codexFixture,
+			reasoning_options: [{ type: "effort", values: ["none", "low", "high", "xhigh"] }],
+		};
+		expect(() => buildModelsSource([drifted, proFixture])).toThrow(/reasoning_options/);
+	});
+
+	it("fails loudly when upstream drops the effort options for a Responses model", () => {
+		const missing: UpstreamModel = { ...proFixture, reasoning_options: [] };
+		expect(() => buildModelsSource([codexFixture, missing])).toThrow(/reasoning_options/);
 	});
 });

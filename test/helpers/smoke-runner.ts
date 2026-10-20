@@ -3,10 +3,10 @@ import type {
 	Api, AssistantMessage, AssistantMessageEvent, AssistantMessageEventStream,
 	Context, Model, SimpleStreamOptions,
 } from "@earendil-works/pi-ai/compat";
-import { ANTHROPIC_MODELS, canonicalModelId, NEON_MODELS } from "../../src/models.js";
-import { streamNeon, streamNeonAnthropic } from "../../src/stream.js";
+import { ANTHROPIC_MODELS, canonicalModelId, NEON_MODELS, RESPONSES_MODELS } from "../../src/models.js";
+import { streamNeon, streamNeonAnthropic, streamNeonResponses } from "../../src/stream.js";
 
-export type SmokeProvider = "neon" | "neon-anthropic";
+export type SmokeProvider = "neon" | "neon-anthropic" | "neon-responses";
 
 export interface SmokeOptions {
 	modelId: string;
@@ -27,8 +27,8 @@ export function parseSmokeArgs(args: string[]): SmokeOptions {
 		else if (arg === "--provider" || arg.startsWith("--provider=")) {
 			if (options.provider) throw new Error("Specify --provider only once");
 			const value = arg === "--provider" ? args[++i] : arg.slice("--provider=".length);
-			if (value !== "neon" && value !== "neon-anthropic") {
-				throw new Error("--provider requires neon or neon-anthropic");
+			if (value !== "neon" && value !== "neon-anthropic" && value !== "neon-responses") {
+				throw new Error("--provider requires neon, neon-anthropic, or neon-responses");
 			}
 			options.provider = value;
 		} else if (arg.startsWith("--")) {
@@ -45,12 +45,20 @@ export function parseSmokeArgs(args: string[]): SmokeOptions {
 export function selectSmokeModel(options: SmokeOptions): Model<Api> {
 	const id = canonicalModelId(options.modelId);
 	const chat = NEON_MODELS.find((entry) => entry.id === id);
-	if (!chat) throw new Error(`Unknown model: ${options.modelId}`);
 	const anthropic = ANTHROPIC_MODELS.find((entry) => entry.id === id);
-	const provider = options.provider ?? (anthropic ? "neon-anthropic" : "neon");
-	if (provider === "neon") return chat;
-	if (!anthropic) throw new Error(`Model ${id} is not available on neon-anthropic`);
-	return anthropic;
+	const responses = RESPONSES_MODELS.find((entry) => entry.id === id);
+	if (!chat && !anthropic && !responses) throw new Error(`Unknown model: ${options.modelId}`);
+	const provider = options.provider ?? (responses ? "neon-responses" : anthropic ? "neon-anthropic" : "neon");
+	if (provider === "neon") {
+		if (!chat) throw new Error(`Model ${id} is not available on neon`);
+		return chat;
+	}
+	if (provider === "neon-anthropic") {
+		if (!anthropic) throw new Error(`Model ${id} is not available on neon-anthropic`);
+		return anthropic;
+	}
+	if (!responses) throw new Error(`Model ${id} is not available on neon-responses`);
+	return responses;
 }
 
 async function consumeSmokeStream(
@@ -76,7 +84,11 @@ export async function runSmoke(
 	onEvent?: (event: AssistantMessageEvent) => void,
 ): Promise<AssistantMessage[]> {
 	const model = selectSmokeModel(options);
-	const startStream = model.api === "anthropic-messages" ? streamNeonAnthropic : streamNeon;
+	const startStream = model.api === "anthropic-messages"
+		? streamNeonAnthropic
+		: model.api === "openai-responses"
+			? streamNeonResponses
+			: streamNeon;
 	const requestOptions: SimpleStreamOptions = {
 		...streamOptions,
 		maxTokens: streamOptions.maxTokens ?? (options.thinking ? 4096 : 512),
@@ -86,7 +98,8 @@ export async function runSmoke(
 		messages: [{
 			role: "user",
 			content: options.tools
-				? `Call smoke_echo exactly once with message "${SMOKE_TEXT}". After reading its result, reply with exactly: ${SMOKE_TEXT}`
+				// Codex models can answer directly; require the tool call explicitly.
+				? `You must call the smoke_echo tool before answering; do not answer from memory. Call smoke_echo exactly once with message "${SMOKE_TEXT}". After reading its result, reply with exactly: ${SMOKE_TEXT}`
 				: `Reply with exactly: ${SMOKE_TEXT}`,
 			timestamp: Date.now(),
 		}],

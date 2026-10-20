@@ -67,19 +67,36 @@ export function resolveNeonBaseUrl(options: ResolveOptions = {}): string | undef
  * `https://branch.example/anthropic/anthropic`.
  */
 export function resolveNeonAnthropicBaseUrl(options: ResolveOptions = {}): string | undefined {
-	return resolveNeonBaseUrlWithPath(options, "/anthropic");
+	return resolveNeonBaseUrlWithPath(options, "/anthropic", ["/anthropic"]);
 }
 
-function resolveNeonBaseUrlWithPath(options: ResolveOptions, path: string): string | undefined {
+/**
+ * Resolve the effective Neon base URL, ready for the OpenAI Responses
+ * endpoint at `<base>/openai/v1/responses`.
+ *
+ * Same precedence as `resolveNeonBaseUrl`. Strips a trailing `/openai/v1` (or
+ * `/openai`) so a user-supplied base URL like
+ * `https://branch.example/openai/v1` resolves to `https://branch.example`
+ * plus the canonical suffix rather than a doubled path.
+ */
+export function resolveNeonResponsesBaseUrl(options: ResolveOptions = {}): string | undefined {
+	return resolveNeonBaseUrlWithPath(options, "/openai/v1", ["/openai/v1", "/openai"]);
+}
+
+function resolveNeonBaseUrlWithPath(
+	options: ResolveOptions,
+	path: string,
+	stripSuffixes: readonly string[] = [path],
+): string | undefined {
 	const fromCredential = options.credentialEnv?.[NEON_AI_GATEWAY_BASE_URL_ENV];
 	const fromProcess = options.processEnv?.[NEON_AI_GATEWAY_BASE_URL_ENV];
 	const raw = fromCredential || fromProcess;
 	if (!raw) return undefined;
-	const normalized = normalizeNeonBaseUrl(raw).replace(
-		new RegExp(`${escapeRegExp(path)}$`, "u"),
-		"",
+	const stripped = stripSuffixes.reduce(
+		(acc, suffix) => acc.replace(new RegExp(`${escapeRegExp(suffix)}$`, "u"), ""),
+		normalizeNeonBaseUrl(raw),
 	);
-	return `${normalized}${path}`;
+	return `${stripped}${path}`;
 }
 
 function escapeRegExp(value: string): string {

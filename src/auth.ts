@@ -23,6 +23,7 @@ import {
 
 const PROVIDER_ID = "neon";
 const ANTHROPIC_PROVIDER_ID = "neon-anthropic";
+const RESPONSES_PROVIDER_ID = "neon-responses";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -170,6 +171,18 @@ export function registerNeonAuthCommands(pi: ExtensionAPI): void {
 				},
 			};
 			file[ANTHROPIC_PROVIDER_ID] = anthropicCredential;
+			const responsesExisting = file[RESPONSES_PROVIDER_ID];
+			const responsesPrior = isRecord(responsesExisting) ? responsesExisting : {};
+			const responsesCredential: Record<string, unknown> = {
+				...responsesPrior,
+				type: "api_key",
+				key: token,
+				env: {
+					...(isRecord(responsesPrior.env) ? responsesPrior.env : {}),
+					[NEON_AI_GATEWAY_BASE_URL_ENV]: baseUrl,
+				},
+			};
+			file[RESPONSES_PROVIDER_ID] = responsesCredential;
 			await writeAuthFile(file);
 
 			ctx.ui.notify(
@@ -183,12 +196,13 @@ export function registerNeonAuthCommands(pi: ExtensionAPI): void {
 		description: "Remove the stored Neon AI Gateway credential",
 		handler: async (_args, ctx) => {
 			const file = readAuthFile();
-			if (!(PROVIDER_ID in file) && !(ANTHROPIC_PROVIDER_ID in file)) {
+			if (!(PROVIDER_ID in file) && !(ANTHROPIC_PROVIDER_ID in file) && !(RESPONSES_PROVIDER_ID in file)) {
 				ctx.ui.notify("No Neon AI Gateway credential stored.", "info");
 				return;
 			}
 			delete file[PROVIDER_ID];
 			delete file[ANTHROPIC_PROVIDER_ID];
+			delete file[RESPONSES_PROVIDER_ID];
 			await writeAuthFile(file);
 			ctx.ui.notify("Neon AI Gateway credential removed. Use /reload to pick up the change.", "info");
 		},
@@ -198,7 +212,7 @@ export function registerNeonAuthCommands(pi: ExtensionAPI): void {
 		description: "Show the resolved Neon AI Gateway base URL and credential status",
 		handler: async (_args, ctx) => {
 			const file = readAuthFile();
-			const stored = file[PROVIDER_ID] ?? file[ANTHROPIC_PROVIDER_ID];
+			const stored = file[PROVIDER_ID] ?? file[ANTHROPIC_PROVIDER_ID] ?? file[RESPONSES_PROVIDER_ID];
 			const storedObj = stored && typeof stored === "object" ? (stored as Record<string, unknown>) : undefined;
 			const storedEnv =
 				storedObj?.env && typeof storedObj.env === "object"
@@ -214,7 +228,7 @@ export function registerNeonAuthCommands(pi: ExtensionAPI): void {
 				!!(storedObj && typeof storedObj.managementKey === "string");
 			const storedOrgId =
 				storedObj && typeof storedObj.orgId === "string" ? storedObj.orgId : undefined;
-			const providerStatuses = [PROVIDER_ID, ANTHROPIC_PROVIDER_ID].map((providerId) => {
+			const providerStatuses = [PROVIDER_ID, ANTHROPIC_PROVIDER_ID, RESPONSES_PROVIDER_ID].map((providerId) => {
 				const entry = file[providerId];
 				const credential = isRecord(entry) ? entry : undefined;
 				const env = isRecord(credential?.env) ? credential.env : undefined;
@@ -234,7 +248,7 @@ export function registerNeonAuthCommands(pi: ExtensionAPI): void {
 					`  Source: ${storedBaseUrl ? "auth.json" : fromEnv ? "environment" : "(none)"}`,
 					`  Management key: ${hasManagementKey ? "configured" : "(not set; /neon-balance disabled)"}`,
 					`  Org id: ${storedOrgId ?? "(auto-discover on first /neon-balance)"}`,
-					...(allConfigured ? [] : ["  Run /neon-login to configure both providers, then /reload."]),
+					...(allConfigured ? [] : ["  Run /neon-login to configure all providers, then /reload."]),
 				].join("\n"),
 				allConfigured ? "info" : "warning",
 			);

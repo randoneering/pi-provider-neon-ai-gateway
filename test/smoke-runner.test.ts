@@ -57,6 +57,57 @@ function captureFetch(responses: (() => Response)[]): { fetch: FetchFunction; re
 	};
 }
 
+function responsesTextResponse(text: string): Response {
+	const events: Record<string, unknown>[] = [
+		{ type: "response.created", response: { id: "resp_test" } },
+		{ type: "response.output_item.added", output_index: 0, item: {
+			type: "message", role: "assistant", id: "msg_test", status: "in_progress", content: [],
+		} },
+		{ type: "response.output_text.delta", item_id: "msg_test", output_index: 0, content_index: 0, delta: text },
+		{ type: "response.output_item.done", output_index: 0, item: {
+			type: "message", role: "assistant", id: "msg_test", status: "completed",
+			content: [{ type: "output_text", text, annotations: [] }],
+		} },
+		{ type: "response.completed", response: {
+			id: "resp_test", status: "completed",
+			usage: {
+				input_tokens: 5, output_tokens: 3, total_tokens: 8,
+				input_tokens_details: { cached_tokens: 0 }, output_tokens_details: { reasoning_tokens: 0 },
+			},
+		} },
+	];
+	return new Response(
+		events.map((event) => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join(""),
+		{ headers: { "content-type": "text/event-stream" } },
+	);
+}
+
+function responsesToolCallResponse(): Response {
+	const args = JSON.stringify({ message: OK });
+	const events: Record<string, unknown>[] = [
+		{ type: "response.created", response: { id: "resp_test" } },
+		{ type: "response.output_item.added", output_index: 0, item: {
+			type: "function_call", id: "fc_test", call_id: "call_test", name: "smoke_echo", arguments: "", status: "in_progress",
+		} },
+		{ type: "response.function_call_arguments.delta", item_id: "fc_test", output_index: 0, delta: args },
+		{ type: "response.function_call_arguments.done", item_id: "fc_test", output_index: 0, arguments: args },
+		{ type: "response.output_item.done", output_index: 0, item: {
+			type: "function_call", id: "fc_test", call_id: "call_test", name: "smoke_echo", arguments: args, status: "completed",
+		} },
+		{ type: "response.completed", response: {
+			id: "resp_test", status: "completed",
+			usage: {
+				input_tokens: 5, output_tokens: 3, total_tokens: 8,
+				input_tokens_details: { cached_tokens: 0 }, output_tokens_details: { reasoning_tokens: 0 },
+			},
+		} },
+	];
+	return new Response(
+		events.map((event) => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join(""),
+		{ headers: { "content-type": "text/event-stream" } },
+	);
+}
+
 function streamOptions(fetch: FetchFunction): SimpleStreamOptions {
 	return {
 		apiKey: "fake-smoke-token",
@@ -96,6 +147,37 @@ describe("smoke arguments and routing", () => {
 
 	it("preserves canonical model-id lookup", () => {
 		expect(selectSmokeModel(parseSmokeArgs(["DATABRICKS-GPT-6-LUNA"])).id).toBe("gpt-6-luna");
+	});
+});
+
+describe("neon-responses routing", () => {
+	it("accepts --provider neon-responses", () => {
+		const options = parseSmokeArgs(["--provider", "neon-responses", "gpt-5-3-codex"]);
+		expect(options.provider).toBe("neon-responses");
+		expect(parseSmokeArgs(["gpt-5-3-codex", "--provider=neon-responses"]).provider).toBe("neon-responses");
+		expect(selectSmokeModel(options).api).toBe("openai-responses");
+	});
+
+	it("routes the responses-only model ids to neon-responses by default", () => {
+		for (const id of ["gpt-5-3-codex", "gpt-5-5-pro"]) {
+			const model = selectSmokeModel(parseSmokeArgs([id]));
+			expect(model.provider, id).toBe("neon-responses");
+			expect(model.api, id).toBe("openai-responses");
+		}
+	});
+
+	it("keeps the chat and Anthropic defaults for other models", () => {
+		expect(selectSmokeModel(parseSmokeArgs(["gpt-5-mini"])).provider).toBe("neon");
+		expect(selectSmokeModel(parseSmokeArgs(["claude-sonnet-4-6"])).provider).toBe("neon-anthropic");
+	});
+
+	it("rejects responses-only models on the chat and Anthropic providers", () => {
+		expect(() => selectSmokeModel(parseSmokeArgs(["gpt-5-3-codex", "--provider=neon"]))).toThrow(/not available/);
+		expect(() => selectSmokeModel(parseSmokeArgs(["gpt-5-5-pro", "--provider=neon-anthropic"]))).toThrow(/not available/);
+	});
+
+	it("rejects chat-only models on the neon-responses provider", () => {
+		expect(() => selectSmokeModel(parseSmokeArgs(["gpt-5-mini", "--provider=neon-responses"]))).toThrow(/not available/);
 	});
 });
 
@@ -265,6 +347,33 @@ describe("smoke runner through real extension adapters", () => {
 	it("rejects an unexpected tool call in the plain-text check", async () => {
 		const { fetch } = captureFetch([() => anthropicResponse(true)]);
 		await expect(runSmoke(parseSmokeArgs(["claude-sonnet-4-6"]), streamOptions(fetch))).rejects.toThrow(/Unexpected tool call/);
+	});
+
+	it("round-trips a codex tool call through the responses adapter with store disabled", async () => {
+		const { fetch, requests } = captureFetch([
+			() => responsesToolCallResponse(),
+			() => responsesTextResponse(OK),
+		]);
+		const results = await runSmoke(parseSmokeArgs(["gpt-5-3-codex", "--tools", "--thinking"]), streamOptions(fetch));
+		expect(results.map((message) => message.stopReason)).toEqual(["toolUse", "stop"]);
+		expect(requests).toHaveLength(2);
+		expect(requests[0]?.url).toBe("https://gateway.example/openai/v1/responses");
+		expect(requests[0]?.body.model).toBe("gpt-5-3-codex");
+		expect(requests[0]?.body.store).toBe(false);
+		expect((requests[0]?.body.reasoning as Record<string, unknown>).effort).toBe("low");
+		const input = requests[1]?.body.input as Record<string, unknown>[];
+		expect(input).toEqual(expect.arrayContaining([
+			expect.objectContaining({ type: "function_call_output" }),
+		]));
+	});
+
+	it("round-trips plain text through the responses adapter without corrupting the SSE body", async () => {
+		const { fetch, requests } = captureFetch([() => responsesTextResponse(OK)]);
+		const results = await runSmoke(parseSmokeArgs(["gpt-5-5-pro"]), streamOptions(fetch));
+		expect(requests[0]?.url).toBe("https://gateway.example/openai/v1/responses");
+		expect(requests[0]?.body.store).toBe(false);
+		const text = results[0]?.content.filter((part) => part.type === "text").map((part) => part.text).join("");
+		expect(text).toBe(OK);
 	});
 
 	it("reports gateway errors instead of accepting partial output", async () => {
