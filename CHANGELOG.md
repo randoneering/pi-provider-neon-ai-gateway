@@ -13,9 +13,12 @@ All notable changes to `pi-provider-neon-ai-gateway` are documented here. Versio
 - 10 more chat models from `https://neon.com/models.json`: `claude-haiku-5-5`, `claude-sonnet-5-5`, `deepseek-v4-1-flash`, `gemini-3-7-flash`, `gemini-3-8-flash`, `glm-5-3`, `gpt-6-1-sol`, `gpt-6-luna`, `gpt-6-sol`, `grok-4-7`. Regenerate the catalog with `npm run update-models`.
 - `neon-anthropic` provider now also covers `claude-haiku-5-5` and `claude-sonnet-5-5`. The set is hardcoded in `scripts/update-models.ts` and reconciled with the upstream Anthropic Messages docs.
 - `npm run test:smoke` supports `--provider neon|neon-anthropic` and `--tools` for an echo-tool round trip. Both paths use the extension adapters. Without `--provider`, Claude uses Anthropic Messages and other models use chat completions.
+- The model catalog generator skips upstream entries marked `released: false`, so announced-but-unavailable models cannot reach the picker on a regen. An absent flag keeps the entry for backward compatibility.
+- The generated catalog now carries the cache prices Neon publishes: 47 of 55 chat models have a real `cacheRead`, 22 also have `cacheWrite`, and models without published cache pricing keep 0. `/neon-models` shows the real cache-read rates instead of dashes.
 
 ### Changed
 
+- Upgraded the pinned `@earendil-works/pi-ai` and `@earendil-works/pi-coding-agent` dev dependencies from 0.85.1 to 1.3.0. The stream adapters now normalize context through the SDK's `normalizeContext`, and the generated catalog builders use a shared base because 1.3.0 turns `Model.compat` into a discriminated union. The gateway-specific workarounds (Gemini signatures, Claude thinking modes, error wrapping) are all still needed against 1.3.0 and stay in place.
 - `scripts/update-models.ts` owns the `ANTHROPIC_MODEL_IDS` set and emits the `ANTHROPIC_MODELS` array in the generated `src/models.ts`. The next regen no longer drops the anthropic catalog.
 
 ### Fixed

@@ -47,6 +47,28 @@ describe("toNeonModelInput", () => {
 	});
 });
 
+const cacheFixture: UpstreamModel = {
+	id: "cache-model",
+	name: "Cache Model",
+	family: "gpt-5",
+	temperature: false,
+	tool_call: true,
+	limit: { context: 400000, output: 128000 },
+	cost: { input: 1.25, output: 10, cache_read: 0.125, cache_write: 1.25 },
+};
+
+describe("toNeonModelInput", () => {
+	it("maps upstream cache_read/cache_write onto cacheRead/cacheWrite", () => {
+		const mapped = toNeonModelInput(cacheFixture);
+		expect(mapped.cost).toEqual({ input: 1.25, output: 10, cacheRead: 0.125, cacheWrite: 1.25 });
+	});
+
+	it("defaults cacheRead/cacheWrite to zero when upstream omits them", () => {
+		const mapped = toNeonModelInput({ id: "no-cache", cost: { input: 1, output: 2 } });
+		expect(mapped.cost).toEqual({ input: 1, output: 2, cacheRead: 0, cacheWrite: 0 });
+	});
+});
+
 describe("buildModelsSource", () => {
 	it("emits a sorted, deterministic module with capabilities and scaffold", () => {
 		const a = buildModelsSource([fixture, { id: "gpt-5", name: "GPT-5", temperature: false, tool_call: true }]);
@@ -69,6 +91,29 @@ describe("buildModelsSource", () => {
 		const source = buildModelsSource([fixture, { id: "gte-large-en", family: "text-embedding" }]);
 		expect(source).not.toContain("gte-large-en");
 		expect(source).toContain("gpt-5-6-luna");
+	});
+
+	it("emits upstream cache prices and keeps zeros for models that do not publish them", () => {
+		const source = buildModelsSource([cacheFixture, { id: "no-cache-model", name: "No Cache", family: "gpt-5", cost: { input: 1, output: 2 } }]);
+		expect(source).toContain(
+			'cost: { input: 1.25, output: 10, cacheRead: 0.125, cacheWrite: 1.25 },',
+		);
+		expect(source).toContain("cost: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 },");
+	});
+
+	it("excludes unreleased upstream entries from the generated catalog", () => {
+		const source = buildModelsSource([
+			{ id: "gpt-5-9-mist", name: "GPT-5.9 Mist", family: "gpt-5", released: false, temperature: false, tool_call: true },
+			{ id: "gpt-5-8", name: "GPT-5.8", family: "gpt-5", released: true, temperature: false, tool_call: true },
+		]);
+		expect(source).not.toContain("gpt-5-9-mist");
+		expect(source).toContain('id: "gpt-5-8"');
+		expect(source).toContain('"gpt-5-8": { temperature: false, toolCall: true },');
+	});
+
+	it("keeps entries that omit the released flag for backward compatibility", () => {
+		const source = buildModelsSource([{ id: "gpt-5-legacy", name: "GPT-5 Legacy", family: "gpt-5" }]);
+		expect(source).toContain('id: "gpt-5-legacy"');
 	});
 
 	it("excludes models that require the Responses endpoint", () => {
