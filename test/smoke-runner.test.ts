@@ -179,6 +179,22 @@ describe("neon-responses routing", () => {
 	it("rejects chat-only models on the neon-responses provider", () => {
 		expect(() => selectSmokeModel(parseSmokeArgs(["gpt-5-mini", "--provider=neon-responses"]))).toThrow(/not available/);
 	});
+
+	it("keeps the Responses-capable chat models on the chat provider by default", () => {
+		for (const id of ["gpt-6-1-sol", "gpt-6-astra"]) {
+			const model = selectSmokeModel(parseSmokeArgs([id]));
+			expect(model.provider, id).toBe("neon");
+			expect(model.api, id).toBe("openai-completions");
+		}
+	});
+
+	it("accepts --provider neon-responses for the Responses-capable chat models", () => {
+		for (const id of ["gpt-6-1-sol", "gpt-6-astra"]) {
+			const model = selectSmokeModel(parseSmokeArgs([id, "--provider=neon-responses"]));
+			expect(model.provider, id).toBe("neon-responses");
+			expect(model.api, id).toBe("openai-responses");
+		}
+	});
 });
 
 describe("smoke runner through real extension adapters", () => {

@@ -80,6 +80,28 @@ function removeKeys(payload: Record<string, unknown>, keys: readonly string[]): 
 	for (const key of keys) delete payload[key];
 }
 
+/**
+ * Canonical chat model ids whose upstream rejects function tools with any
+ * reasoning_effort but accepts them with reasoning_effort "none" when tools
+ * are present. Live-verified against the gateway for the whole set:
+ * gpt-5-4, gpt-5-4-mini, gpt-5-4-nano, gpt-5-5, gpt-5-6-luna, gpt-5-6-sol,
+ * gpt-5-6-terra, gpt-6-luna, and gpt-6-sol all fail tool requests unless the
+ * effort is explicitly "none". Models outside the set (gpt-5, gpt-5-1,
+ * gpt-5-2, gpt-5-mini, gpt-5-nano, gpt-oss, gpt-6-1-sol, gpt-6-astra) keep
+ * their requested effort, and no-tool requests are never touched.
+ */
+export const TOOL_EFFORT_NONE_MODELS: ReadonlySet<string> = new Set([
+	"gpt-5-4",
+	"gpt-5-4-mini",
+	"gpt-5-4-nano",
+	"gpt-5-5",
+	"gpt-5-6-luna",
+	"gpt-5-6-sol",
+	"gpt-5-6-terra",
+	"gpt-6-luna",
+	"gpt-6-sol",
+]);
+
 function replayGeminiSignatures(messages: unknown): unknown {
 	if (!Array.isArray(messages)) return messages;
 	return messages.map((message) => {
@@ -140,15 +162,24 @@ export function transformNeonPayload(value: unknown, modelId: string): unknown {
 		removeKeys(payload, ["frequency_penalty", "presence_penalty", "seed"]);
 	} else if (id.includes("gpt-oss")) {
 		removeKeys(payload, ["frequency_penalty", "presence_penalty", "seed", "stop"]);
+		// The gpt-oss upstream rejects max_completion_tokens on every request
+		// with "json: unknown field \"max_completion_tokens\"" but accepts the
+		// legacy max_tokens name (live-verified for plain, tool, and thinking
+		// requests on gpt-oss-120b and gpt-oss-20b).
+		if (payload.max_completion_tokens !== undefined) {
+			payload.max_tokens = payload.max_completion_tokens;
+			delete payload.max_completion_tokens;
+		}
 	} else if (id.includes("qwen") || id.includes("gemma")) {
 		removeKeys(payload, ["frequency_penalty", "presence_penalty", "seed"]);
 	} else if (id.includes("glm") || id.includes("inkling") || id.includes("kimi")) {
 		removeKeys(payload, ["frequency_penalty", "presence_penalty"]);
-	} else if (id === "gpt-5-6-luna" || id === "gpt-6-luna") {
-		// The gateway rejects function tools unless reasoning_effort is
-		// explicitly "none" in chat completions. Omitting the field leaves
-		// the model's default effort, which is rejected too, so set it.
-		// Live GPT-6 Luna tool checks confirm this despite the catalog omitting "none".
+	} else if (TOOL_EFFORT_NONE_MODELS.has(id)) {
+		// These models reject function tools with any reasoning_effort but pass
+		// with "none" once tools are present (live-verified across the whole
+		// set, originally on GPT-6 Luna despite the catalog omitting "none").
+		// Only requests carrying tools are rewritten; no-tool reasoning keeps
+		// its requested effort.
 		if (payload.tools !== undefined) payload.reasoning_effort = "none";
 	} else {
 		// Unknown models keep sampling fields until the upstream contract is known.
@@ -549,7 +580,8 @@ export function streamNeonAnthropic(
 
 /**
  * Stream adapter for the `/openai/v1/responses` endpoint, exposed on the
- * `neon-responses` provider (gpt-5-3-codex, gpt-5-5-pro).
+ * `neon-responses` provider (gpt-5-3-codex, gpt-5-5-pro, gpt-6-1-sol,
+ * gpt-6-astra).
  *
  * Reuses pi-ai's native OpenAI Responses parsing, with two Neon-specific
  * adjustments:

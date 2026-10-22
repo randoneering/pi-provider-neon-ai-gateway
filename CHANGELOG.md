@@ -29,6 +29,9 @@ All notable changes to `pi-provider-neon-ai-gateway` are documented here. Versio
 - Newer native Claude models use adaptive thinking with `output_config.effort`, Sonnet 5.5 uses `between_tools` when thinking is off, and unsupported sampling stays out of native requests.
 - Re-running `/neon-login` preserves the saved cap-block setting.
 - GPT-6 Luna tool calls use `reasoning_effort: "none"` on chat completions, matching the existing GPT-5.6 Luna workaround. Live tool tests confirm the gateway requires and accepts it.
+- The `reasoning_effort: "none"` chat tool workaround now covers the whole live-verified family: gpt-5-4, gpt-5-4-mini, gpt-5-4-nano, gpt-5-5, gpt-5-6-luna, gpt-5-6-sol, gpt-5-6-terra, gpt-6-luna, and gpt-6-sol all reject function tools with any other effort.
+- `gpt-6-1-sol` and `gpt-6-astra` are exposed on `neon-responses`. Their chat upstream rejects function tools with every reasoning effort, `none` included, so tool-driven use needs the Responses endpoint; their chat entries stay for text-only use (live-verified both ways).
+- Every gpt-oss request sent `max_completion_tokens`, which the gpt-oss upstream rejects as an unknown field. The transform renames it to `max_tokens`; live checks pass on plain, tool, and thinking requests for both gpt-oss-120b and gpt-oss-20b.
 - `claude-opus-5-5` returned an empty string when it reasoned. The Neon gateway sends `message.content` as a list of `reasoning` and `text` blocks; pi-ai's openai-completions parser expects a string. The streaming normalizer flattens the list into the `content` plus `reasoning_content` shape the `gpt-oss` harmony adapter uses.
 - `gemini-3-7-flash` and `gemini-3-8-flash` no longer send `frequency_penalty` and `presence_penalty` to the gateway. The two Gemini branches in `transformNeonPayload` collapsed into one `/^gemini-3-/u` regex so every Gemini 3 model inherits the same penalty stripping, with a regression test that loops the catalog.
 

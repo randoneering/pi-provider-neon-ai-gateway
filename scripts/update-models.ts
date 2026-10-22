@@ -46,9 +46,10 @@ interface NeonModelInput {
 
 /**
  * Canonical effort ladder used by Neon's OpenAI Responses endpoint
- * (https://neon.com/docs/ai-gateway/openai-responses).
+ * (https://neon.com/docs/ai-gateway/openai-responses). Live checks extended
+ * it with "max" for gpt-6-1-sol and gpt-6-astra.
  */
-const RESPONSES_EFFORT_LADDER = ["none", "low", "medium", "high", "xhigh"] as const;
+const RESPONSES_EFFORT_LADDER = ["none", "low", "medium", "high", "xhigh", "max"] as const;
 
 /**
  * pi thinking levels (ModelThinkingLevel in @earendil-works/pi-ai:
@@ -64,7 +65,8 @@ const PI_LEVEL_EFFORT_TARGET: Record<string, number> = {
 	medium: 2,
 	high: 3,
 	xhigh: 4,
-	max: 4,
+	// Ladders that top out at xhigh fall back to the highest effort.
+	max: 5,
 };
 
 interface ResponsesModelSpec {
@@ -78,13 +80,22 @@ interface ResponsesModelSpec {
 	temperature: boolean;
 	toolCall: boolean;
 	efforts: readonly string[];
+	/**
+	 * True only for models that exist exclusively on the Responses endpoint
+	 * and must be dropped from the chat catalog. Specs without the flag (the
+	 * gpt-6-1-sol and gpt-6-astra entries) stay in both catalogs.
+	 */
+	responsesOnly?: boolean;
 }
 
 /**
- * Catalog for the `neon-responses` provider. Per product decision, only the
- * two Responses-only models are exposed on `/openai/v1/responses`; every
- * other model stays on the `neon` chat provider. Effort values and metadata
- * are reconciled against https://neon.com/models.json at generation time.
+ * Catalog for the `neon-responses` provider. gpt-5-3-codex and gpt-5-5-pro
+ * are Responses-only; gpt-6-1-sol and gpt-6-astra reject "none" on chat so
+ * function tools cannot work there, but they do full echo-tool round trips
+ * with reasoning low on /openai/v1/responses (live-verified), so they are
+ * exposed on both providers (text-only use keeps working on chat). Effort
+ * values and metadata are reconciled against https://neon.com/models.json
+ * at generation time.
  */
 const RESPONSES_MODEL_SPECS: ResponsesModelSpec[] = [
 	{
@@ -98,6 +109,7 @@ const RESPONSES_MODEL_SPECS: ResponsesModelSpec[] = [
 		temperature: true,
 		toolCall: true,
 		efforts: ["none", "low", "medium", "high", "xhigh"],
+		responsesOnly: true,
 	},
 	{
 		id: "gpt-5-5-pro",
@@ -110,14 +122,48 @@ const RESPONSES_MODEL_SPECS: ResponsesModelSpec[] = [
 		temperature: false,
 		toolCall: true,
 		efforts: ["medium", "high", "xhigh"],
+		responsesOnly: true,
+	},
+	{
+		id: "gpt-6-1-sol",
+		name: "GPT-6.1 Sol",
+		reasoning: true,
+		input: ["text", "image"],
+		context: 1_050_000,
+		output: 128_000,
+		cost: { input: 2, output: 10, cacheRead: 0.1, cacheWrite: 2.5 },
+		temperature: false,
+		toolCall: true,
+		efforts: ["low", "medium", "high", "xhigh", "max"],
+	},
+	{
+		id: "gpt-6-astra",
+		name: "GPT-6 Astra",
+		reasoning: true,
+		input: ["text", "image"],
+		context: 1_050_000,
+		output: 128_000,
+		cost: { input: 10, output: 50, cacheRead: 1, cacheWrite: 12.5 },
+		temperature: false,
+		toolCall: true,
+		efforts: ["low", "medium", "high", "xhigh", "max"],
 	},
 ];
 
-const RESPONSES_ONLY_MODELS = new Set(RESPONSES_MODEL_SPECS.map((spec) => spec.id));
+/**
+ * Canonical ids excluded from the chat catalog because they exist only on
+ * the Responses endpoint. Derived from the responsesOnly flag so specs that
+ * are also live-verified on chat (gpt-6-1-sol, gpt-6-astra) keep their chat
+ * entries. The smoke-runner default routing uses this set too.
+ */
+export const RESPONSES_ONLY_MODELS = new Set(
+	RESPONSES_MODEL_SPECS.filter((spec) => spec.responsesOnly).map((spec) => spec.id),
+);
 
 /**
- * Reconcile a Responses-only model's upstream reasoning_options against the
- * hardcoded effort values. The thinkingLevelMap is derived from these values,
+ * Reconcile a Responses model's upstream reasoning_options against the
+ * hardcoded effort values (including the shared gpt-6-1-sol and
+ * gpt-6-astra entries). The thinkingLevelMap is derived from these values,
  * so upstream drift must fail the generation instead of emitting a wrong map.
  */
 export function resolveResponsesEfforts(spec: ResponsesModelSpec, models: UpstreamModel[]): string[] {
@@ -139,8 +185,9 @@ export function resolveResponsesEfforts(spec: ResponsesModelSpec, models: Upstre
 /**
  * Map pi thinking levels onto the model's supported effort values, clamping
  * upward when a level is unsupported. For gpt-5-5-pro this maps off and low
- * to "medium": the adapter would otherwise default effort to "none", which
- * the gateway rejects with 400.
+ * to "medium"; for gpt-6-1-sol and gpt-6-astra it clamps off and minimal up
+ * to "low". The adapter would otherwise default effort to "none", which
+ * these models reject with 400.
  */
 export function thinkingLevelMapFor(efforts: readonly string[]): Record<string, string> {
 	const ladderRank = new Map<string, number>(
@@ -409,13 +456,14 @@ ${anthropicEntries.map(entrySourceAnthropic).join("\n")}
 ];
 
 /**
- * Responses-only catalog for the \`/openai/v1/responses\` endpoint, exposed
- * on the \`neon-responses\` provider. Hardcoded in scripts/update-models.ts
- * per product decision (all other models stay on the chat provider) and
- * reconciled with the upstream reasoning_options at generation time.
- * thinkingLevelMap maps pi thinking levels onto upstream effort values,
- * clamping upward when a level is unsupported so the gateway never sees a
- * rejected effort (e.g. "none" for gpt-5-5-pro).
+ * Responses-endpoint catalog for the \`/openai/v1/responses\` endpoint,
+ * exposed on the \`neon-responses\` provider. Hardcoded in
+ * scripts/update-models.ts: gpt-5-3-codex and gpt-5-5-pro are Responses-only,
+ * while gpt-6-1-sol and gpt-6-astra keep their chat catalog entries for
+ * text-only use. Reconciled with the upstream reasoning_options at
+ * generation time. thinkingLevelMap maps pi thinking levels onto upstream
+ * effort values, clamping when a level is unsupported so the gateway never
+ * sees a rejected effort (e.g. "none" for gpt-5-5-pro).
  */
 export const RESPONSES_MODELS: Model<ResponsesApi>[] = [
 ${responses

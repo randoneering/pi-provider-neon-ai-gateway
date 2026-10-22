@@ -4,6 +4,7 @@ import type {
 	Context, Model, SimpleStreamOptions,
 } from "@earendil-works/pi-ai/compat";
 import { ANTHROPIC_MODELS, canonicalModelId, NEON_MODELS, RESPONSES_MODELS } from "../../src/models.js";
+import { RESPONSES_ONLY_MODELS } from "../../scripts/update-models.js";
 import { streamNeon, streamNeonAnthropic, streamNeonResponses } from "../../src/stream.js";
 
 export type SmokeProvider = "neon" | "neon-anthropic" | "neon-responses";
@@ -48,7 +49,10 @@ export function selectSmokeModel(options: SmokeOptions): Model<Api> {
 	const anthropic = ANTHROPIC_MODELS.find((entry) => entry.id === id);
 	const responses = RESPONSES_MODELS.find((entry) => entry.id === id);
 	if (!chat && !anthropic && !responses) throw new Error(`Unknown model: ${options.modelId}`);
-	const provider = options.provider ?? (responses ? "neon-responses" : anthropic ? "neon-anthropic" : "neon");
+	// Default routing follows the Responses-only set, not RESPONSES_MODELS:
+	// gpt-6-1-sol and gpt-6-astra are also on the Responses endpoint but keep
+	// the chat provider as their default.
+	const provider = options.provider ?? (RESPONSES_ONLY_MODELS.has(id) ? "neon-responses" : anthropic ? "neon-anthropic" : "neon");
 	if (provider === "neon") {
 		if (!chat) throw new Error(`Model ${id} is not available on neon`);
 		return chat;
