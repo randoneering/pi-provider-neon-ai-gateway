@@ -172,6 +172,7 @@ Sourced from [neon.com/models.json](https://neon.com/models.json). The catalog a
 
 The `neon` provider uses Chat Completions; `neon-anthropic` uses native Anthropic Messages; `neon-responses` uses the OpenAI Responses API at `/openai/v1/responses`.
 `gpt-5-3-codex` and `gpt-5-5-pro` require the Responses endpoint, so they are exposed only on `neon-responses` ([Neon endpoint guidance](https://neon.com/docs/ai-gateway/models#which-endpoint-to-use)).
+`gpt-6-1-sol` and `gpt-6-astra` also live on `neon-responses`: their chat upstream rejects function tools with every reasoning effort, including `none`, so tool use needs the Responses endpoint. Their chat entries stay for text-only use.
 
 - **Anthropic**: claude-fable-5, claude-fable-5-1, claude-haiku-4-5, claude-haiku-5-5, claude-opus-4-1, claude-opus-4-5, claude-opus-4-6, claude-opus-4-7, claude-opus-4-8, claude-opus-5, claude-opus-5-5, claude-sonnet-4-5, claude-sonnet-4-6, claude-sonnet-5, claude-sonnet-5-5
 - **OpenAI**: gpt-5, gpt-5-mini, gpt-5-nano, gpt-5-1, gpt-5-2, gpt-5-4, gpt-5-4-mini, gpt-5-4-nano, gpt-5-5, gpt-5-6-luna, gpt-5-6-sol, gpt-5-6-terra, gpt-6-1-sol, gpt-6-astra, gpt-6-luna, gpt-6-sol, gpt-oss-120b, gpt-oss-20b; plus `gpt-5-3-codex` and `gpt-5-5-pro` on `neon-responses`
@@ -205,6 +206,11 @@ Newer Claude models on `neon-anthropic` use these native thinking modes:
 
 Other Claude models keep the pinned SDK's existing thinking behavior.
 See [Neon's native thinking reference](https://neon.com/docs/ai-gateway/anthropic-messages#extended-thinking).
+
+On chat completions, these models accept function tools only with `reasoning_effort: "none"`: gpt-5-4, gpt-5-4-mini, gpt-5-4-nano, gpt-5-5, gpt-5-6-luna, gpt-5-6-sol, gpt-5-6-terra, gpt-6-luna, and gpt-6-sol.
+The extension sets `none` automatically when tools are present; reasoning without tools keeps the requested effort.
+Function tools cannot work on chat for `gpt-6-1-sol` and `gpt-6-astra` (they reject `none` too); use `neon-responses` for tool-driven work with those models.
+gpt-oss models get `max_completion_tokens` renamed to `max_tokens`, which their upstream requires.
 
 ## Errors
 

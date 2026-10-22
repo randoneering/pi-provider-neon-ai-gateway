@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { enrichRateLimitMessage, extractArrayContent, isArrayContentModel, transformNeonPayload } from "../src/stream.js";
+import {
+	enrichRateLimitMessage,
+	extractArrayContent,
+	isArrayContentModel,
+	TOOL_EFFORT_NONE_MODELS,
+	transformNeonPayload,
+} from "../src/stream.js";
 import { canonicalModelId, MODEL_CAPABILITIES, NEON_MODELS } from "../src/models.js";
 
 function withBase(payload: Record<string, unknown>): Record<string, unknown> {
@@ -120,7 +126,7 @@ describe("transformNeonPayload", () => {
 
 		it("preserves GPT-6 reasoning without Luna tools", () => {
 			expect((transformNeonPayload(withBase({ reasoning_effort: "high" }), "gpt-6-luna") as Record<string, unknown>).reasoning_effort).toBe("high");
-			expect((transformNeonPayload(withBase({ reasoning_effort: "low", tools: [] }), "gpt-6-sol") as Record<string, unknown>).reasoning_effort).toBe("low");
+			expect((transformNeonPayload(withBase({ reasoning_effort: "low", tools: [] }), "gpt-6-1-sol") as Record<string, unknown>).reasoning_effort).toBe("low");
 		});
 
 		it("forces reasoning_effort none for gpt-5-6-luna when tools are present", () => {
@@ -151,6 +157,63 @@ describe("transformNeonPayload", () => {
 				"gpt-5-6-luna",
 			) as Record<string, unknown>;
 			expect(result.reasoning_effort).toBe("high");
+		});
+	});
+
+	describe("tool effort none family", () => {
+		it("contains exactly the nine live-verified chat ids", () => {
+			expect([...TOOL_EFFORT_NONE_MODELS].sort()).toEqual([
+				"gpt-5-4",
+				"gpt-5-4-mini",
+				"gpt-5-4-nano",
+				"gpt-5-5",
+				"gpt-5-6-luna",
+				"gpt-5-6-sol",
+				"gpt-5-6-terra",
+				"gpt-6-luna",
+				"gpt-6-sol",
+			].sort());
+		});
+
+		it("only contains chat catalog models", () => {
+			for (const id of TOOL_EFFORT_NONE_MODELS) {
+				expect(NEON_MODELS.some((model) => canonicalModelId(model.id) === id), id).toBe(true);
+			}
+		});
+
+		it("forces reasoning_effort none with tools for every set member", () => {
+			for (const id of TOOL_EFFORT_NONE_MODELS) {
+				for (const effort of [undefined, "low", "high"]) {
+					const result = transformNeonPayload(withBase({
+						reasoning_effort: effort,
+						tools: [{ type: "function", function: { name: "smoke_echo", parameters: {} } }],
+					}), id) as Record<string, unknown>;
+					expect(result.reasoning_effort, `${id} (effort ${effort ?? "omitted"})`).toBe("none");
+				}
+			}
+		});
+
+		it("keeps no-tool reasoning unchanged for every set member", () => {
+			for (const id of TOOL_EFFORT_NONE_MODELS) {
+				const result = transformNeonPayload(
+					withBase({ reasoning_effort: "high" }),
+					id,
+				) as Record<string, unknown>;
+				expect(result.reasoning_effort, id).toBe("high");
+			}
+		});
+
+		it("leaves models outside the set untouched when tools are present", () => {
+			for (const model of NEON_MODELS) {
+				const id = canonicalModelId(model.id);
+				// The Claude branch strips reasoning_effort regardless of tools.
+				if (TOOL_EFFORT_NONE_MODELS.has(id) || id.includes("claude")) continue;
+				const result = transformNeonPayload(withBase({
+					reasoning_effort: "low",
+					tools: [{ type: "function", function: { name: "ls", parameters: {} } }],
+				}), id) as Record<string, unknown>;
+				expect(result.reasoning_effort, id).toBe("low");
+			}
 		});
 	});
 
@@ -270,6 +333,40 @@ describe("transformNeonPayload", () => {
 	});
 
 	describe("GPT-OSS family", () => {
+		it("renames max_completion_tokens to max_tokens for the gpt-oss upstream", () => {
+			const result = transformNeonPayload(
+				withBase({ max_completion_tokens: 512 }),
+				"gpt-oss-120b",
+			) as Record<string, unknown>;
+			expect(result.max_completion_tokens).toBeUndefined();
+			expect(result.max_tokens).toBe(512);
+		});
+
+		it("leaves max_tokens alone when max_completion_tokens is absent", () => {
+			const result = transformNeonPayload(
+				withBase({ max_tokens: 256 }),
+				"gpt-oss-20b",
+			) as Record<string, unknown>;
+			expect(result.max_tokens).toBe(256);
+			expect(transformNeonPayload(withBase({}), "gpt-oss-20b")).not.toHaveProperty("max_tokens");
+		});
+
+		it("does not mutate the input payload when renaming", () => {
+			const original = withBase({ max_completion_tokens: 512 });
+			const snapshot = JSON.stringify(original);
+			transformNeonPayload(original, "gpt-oss-120b");
+			expect(JSON.stringify(original)).toBe(snapshot);
+		});
+
+		it("keeps max_completion_tokens for gpt-5-mini", () => {
+			const result = transformNeonPayload(
+				withBase({ max_completion_tokens: 512 }),
+				"gpt-5-mini",
+			) as Record<string, unknown>;
+			expect(result.max_completion_tokens).toBe(512);
+			expect(result.max_tokens).toBeUndefined();
+		});
+
 		it("removes sampling, seed, and stop", () => {
 			const result = transformNeonPayload(
 				withBase({

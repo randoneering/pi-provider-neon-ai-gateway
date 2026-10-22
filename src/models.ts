@@ -810,13 +810,14 @@ export const ANTHROPIC_MODELS: Model<AnthropicApi>[] = [
 ];
 
 /**
- * Responses-only catalog for the `/openai/v1/responses` endpoint, exposed
- * on the `neon-responses` provider. Hardcoded in scripts/update-models.ts
- * per product decision (all other models stay on the chat provider) and
- * reconciled with the upstream reasoning_options at generation time.
- * thinkingLevelMap maps pi thinking levels onto upstream effort values,
- * clamping upward when a level is unsupported so the gateway never sees a
- * rejected effort (e.g. "none" for gpt-5-5-pro).
+ * Responses-endpoint catalog for the `/openai/v1/responses` endpoint,
+ * exposed on the `neon-responses` provider. Hardcoded in
+ * scripts/update-models.ts: gpt-5-3-codex and gpt-5-5-pro are Responses-only,
+ * while gpt-6-1-sol and gpt-6-astra keep their chat catalog entries for
+ * text-only use. Reconciled with the upstream reasoning_options at
+ * generation time. thinkingLevelMap maps pi thinking levels onto upstream
+ * effort values, clamping when a level is unsupported so the gateway never
+ * sees a rejected effort (e.g. "none" for gpt-5-5-pro).
  */
 export const RESPONSES_MODELS: Model<ResponsesApi>[] = [
 	mResponses({
@@ -853,6 +854,42 @@ export const RESPONSES_MODELS: Model<ResponsesApi>[] = [
 			high: "high",
 			xhigh: "xhigh",
 			max: "xhigh",
+		},
+	}),
+	mResponses({
+		id: "gpt-6-1-sol",
+		name: "GPT-6.1 Sol",
+		reasoning: true,
+		input: ["text", "image"],
+		context: 1_050_000,
+		output: 128_000,
+		cost: { input: 2, output: 10, cacheRead: 0.1, cacheWrite: 2.5 },
+		thinkingLevelMap: {
+			off: "low",
+			minimal: "low",
+			low: "low",
+			medium: "medium",
+			high: "high",
+			xhigh: "xhigh",
+			max: "max",
+		},
+	}),
+	mResponses({
+		id: "gpt-6-astra",
+		name: "GPT-6 Astra",
+		reasoning: true,
+		input: ["text", "image"],
+		context: 1_050_000,
+		output: 128_000,
+		cost: { input: 10, output: 50, cacheRead: 1, cacheWrite: 12.5 },
+		thinkingLevelMap: {
+			off: "low",
+			minimal: "low",
+			low: "low",
+			medium: "medium",
+			high: "high",
+			xhigh: "xhigh",
+			max: "max",
 		},
 	}),
 ];

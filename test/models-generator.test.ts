@@ -160,6 +160,36 @@ const proFixture: UpstreamModel = {
 	cost: { input: 30, output: 180, cache_read: 0.175 },
 };
 
+// gpt-6-1-sol and gpt-6-astra keep their chat catalog entries but are also
+// live-verified on the Responses endpoint with reasoning low.
+const sol61Fixture: UpstreamModel = {
+	id: "gpt-6-1-sol",
+	name: "GPT-6.1 Sol",
+	family: "gpt-sol",
+	released: true,
+	reasoning: true,
+	reasoning_options: [{ type: "effort", values: ["low", "medium", "high", "xhigh", "max"] }],
+	tool_call: true,
+	temperature: false,
+	modalities: { input: ["text", "image", "pdf"] },
+	limit: { context: 1050000, output: 128000 },
+	cost: { input: 2, output: 10, cache_read: 0.1, cache_write: 2.5 },
+};
+
+const astraFixture: UpstreamModel = {
+	id: "gpt-6-astra",
+	name: "GPT-6 Astra",
+	family: "gpt-astra",
+	released: true,
+	reasoning: true,
+	reasoning_options: [{ type: "effort", values: ["low", "medium", "high", "xhigh", "max"] }],
+	tool_call: true,
+	temperature: false,
+	modalities: { input: ["text", "image", "pdf"] },
+	limit: { context: 1050000, output: 128000 },
+	cost: { input: 10, output: 50, cache_read: 1, cache_write: 12.5 },
+};
+
 function responsesEntryBlock(source: string, id: string): string {
 	const responsesSection = source.slice(source.indexOf("export const RESPONSES_MODELS"));
 	const start = responsesSection.indexOf(`id: ${JSON.stringify(id)}`);
@@ -223,5 +253,51 @@ describe("RESPONSES_MODELS", () => {
 	it("fails loudly when upstream drops the effort options for a Responses model", () => {
 		const missing: UpstreamModel = { ...proFixture, reasoning_options: [] };
 		expect(() => buildModelsSource([codexFixture, missing])).toThrow(/reasoning_options/);
+	});
+
+	it("emits the shared chat models with a clamped thinkingLevelMap", () => {
+		const source = buildModelsSource([codexFixture, proFixture, sol61Fixture, astraFixture]);
+		for (const [id, cost] of [
+			["gpt-6-1-sol", "cost: { input: 2, output: 10, cacheRead: 0.1, cacheWrite: 2.5 },"],
+			["gpt-6-astra", "cost: { input: 10, output: 50, cacheRead: 1, cacheWrite: 12.5 },"],
+		] as const) {
+			const block = responsesEntryBlock(source, id);
+			expect(block, id).not.toBe("");
+			expect(block, id).toContain(cost);
+			expect(block, id).toContain("context: 1_050_000,");
+			expect(block, id).toContain('off: "low",');
+			expect(block, id).toContain('minimal: "low",');
+			expect(block, id).toContain('low: "low",');
+			expect(block, id).toContain('medium: "medium",');
+			expect(block, id).toContain('high: "high",');
+			expect(block, id).toContain('xhigh: "xhigh",');
+			expect(block, id).toContain('max: "max",');
+			expect(block, id).not.toContain('off: "none"');
+		}
+	});
+
+	it("keeps the shared models in the chat catalog while excluding only the Responses-only ids", () => {
+		const source = buildModelsSource([codexFixture, proFixture, sol61Fixture, astraFixture]);
+		const neonSection = source.slice(
+			source.indexOf("export const NEON_MODELS"),
+			source.indexOf("export interface NeonModelCapabilities"),
+		);
+		expect(neonSection).toContain('id: "gpt-6-1-sol"');
+		expect(neonSection).toContain('id: "gpt-6-astra"');
+		expect(neonSection).not.toContain("gpt-5-3-codex");
+		expect(neonSection).not.toContain("gpt-5-5-pro");
+	});
+
+	it("emits four RESPONSES_MODELS entries", () => {
+		const source = buildModelsSource([codexFixture, proFixture, sol61Fixture, astraFixture]);
+		expect((source.match(/mResponses\(\{/gu) ?? []).length).toBe(4);
+	});
+
+	it("fails loudly when the shared models' upstream reasoning_options drift", () => {
+		const drifted: UpstreamModel = {
+			...sol61Fixture,
+			reasoning_options: [{ type: "effort", values: ["low", "medium", "high", "xhigh"] }],
+		};
+		expect(() => buildModelsSource([drifted, astraFixture, codexFixture, proFixture])).toThrow(/reasoning_options/);
 	});
 });
