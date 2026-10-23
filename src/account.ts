@@ -126,7 +126,8 @@ function extractNeonCost(value: unknown): NeonCostSample | undefined {
 	if (value.type !== "message") return undefined;
 	const message = value.message;
 	if (!isRecord(message)) return undefined;
-	if (message.provider !== PROVIDER_ID && message.provider !== ANTHROPIC_PROVIDER_ID && message.provider !== RESPONSES_PROVIDER_ID) {
+	const decision = message.role === "toolResult" && message.toolName === "neon_decide" && message.isError !== true;
+	if (!decision && message.provider !== PROVIDER_ID && message.provider !== ANTHROPIC_PROVIDER_ID && message.provider !== RESPONSES_PROVIDER_ID) {
 		return undefined;
 	}
 	const usage = message.usage;

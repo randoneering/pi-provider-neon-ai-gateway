@@ -23,6 +23,7 @@ import { registerNeonAlertHooks } from "./alerts.js";
 import { registerNeonAuthCommands } from "./auth.js";
 import { NEON_AI_GATEWAY_BASE_URL_ENV, NEON_AI_GATEWAY_TOKEN_ENV } from "./config.js";
 import { ANTHROPIC_MODELS, NEON_MODELS, RESPONSES_MODELS } from "./models.js";
+import { registerNeonDecisionTool } from "./decision-tool.js";
 import { registerNeonModelCostCommand } from "./model-cost.js";
 import { registerNeonOrgCommand } from "./orgs.js";
 import { registerNeonRateLimitHook } from "./ratelimit.js";
@@ -60,6 +61,7 @@ export default function (pi: ExtensionAPI): void {
 	});
 
 	registerNeonAuthCommands(pi);
+	registerNeonDecisionTool(pi);
 	registerNeonCapBlockCommand(pi);
 	registerNeonCapBlockGuard(pi);
 	registerNeonAccountCommands(pi);

@@ -101,6 +101,23 @@ describe("aggregateLocalSpend", () => {
 		expect(result.totalCost).toBeCloseTo(0.01, 6);
 	});
 
+	it("includes successful neon_decide usage but ignores unrelated and failed tool results", async () => {
+		const sessions = join(tempDir, "sessions");
+		mkdirSync(sessions, { recursive: true });
+		const tool = { role: "toolResult", toolName: "neon_decide", toolCallId: "decision-1", content: [], isError: false,
+			usage: { ...sampleUsage(0.042).usage, input: 1_000_000, output: 1 }, timestamp: 500 };
+		writeFileSync(join(sessions, "decisions.jsonl"), [
+			{ type: "message", message: tool },
+			{ type: "message", message: { ...tool, toolName: "jev_evaluate", usage: sampleUsage(99).usage } },
+			{ type: "message", message: { ...tool, isError: true, usage: sampleUsage(99).usage } },
+			{ type: "message", message: { ...tool, role: "user", usage: sampleUsage(99).usage } },
+		].map((line) => JSON.stringify(line)).join("\n"));
+		const result = await accountModule.aggregateLocalSpend(tempDir);
+		expect(result.totalCost).toBeCloseTo(0.042);
+		expect(result.sessionCount).toBe(1);
+		expect(result.firstTimestamp).toBe(500);
+	});
+
 	it("walks nested session directories", async () => {
 		const a = join(tempDir, "sessions", "proj-a");
 		const b = join(tempDir, "sessions", "proj-a", "sub");

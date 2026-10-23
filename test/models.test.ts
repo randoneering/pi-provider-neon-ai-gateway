@@ -1,7 +1,27 @@
 import { describe, expect, it } from "vitest";
-import { ANTHROPIC_MODELS, canonicalModelId, MODEL_CAPABILITIES, NEON_MODELS, isKnownNeonModel } from "../src/models.js";
+import { ANTHROPIC_MODELS, canonicalModelId, DECISION_MODELS, MODEL_CAPABILITIES, NEON_MODELS, isKnownNeonModel } from "../src/models.js";
 
 describe("NEON_MODELS", () => {
+	it("registers Gemini 4 Argon with its published limits, prices, and sampling support", () => {
+		expect(NEON_MODELS.find((model) => model.id === "gemini-4-argon")).toMatchObject({
+			name: "Gemini 4 Argon", reasoning: true, input: ["text", "image"],
+			contextWindow: 1_048_576, maxTokens: 65_536,
+			cost: { input: 4, output: 20, cacheRead: 0.2, cacheWrite: 0 },
+		});
+		expect(MODEL_CAPABILITIES["gemini-4-argon"]).toEqual({ temperature: false, toolCall: true });
+	});
+
+	it("does not expose decision models through the chat lookup", () => {
+		for (const id of ["typesafeai-jev-1-14-0", "openjev-qwen35-4b"]) {
+			expect(isKnownNeonModel(id)).toBe(false);
+			expect(isKnownNeonModel(`databricks-${id}`)).toBe(false);
+		}
+		expect(DECISION_MODELS).toEqual([
+			{ id: "openjev-qwen35-4b", name: "OpenJev (Qwen 3.5 4B)", inputCost: 0.042 },
+			{ id: "typesafeai-jev-1-14-0", name: "Jev 1.14", inputCost: 0.042 },
+		]);
+	});
+
 	it("has at least the foundation models shipped at launch", () => {
 		expect(NEON_MODELS.length).toBeGreaterThanOrEqual(20);
 	});

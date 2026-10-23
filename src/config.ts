@@ -83,6 +83,10 @@ export function resolveNeonResponsesBaseUrl(options: ResolveOptions = {}): strin
 	return resolveNeonBaseUrlWithPath(options, "/openai/v1", ["/openai/v1", "/openai"]);
 }
 
+export function resolveNeonDecisionBaseUrl(options: ResolveOptions = {}): string | undefined {
+	return resolveNeonBaseUrlWithPath(options, "/typesafe/v1", ["/typesafe/v1", "/typesafe"]);
+}
+
 function resolveNeonBaseUrlWithPath(
 	options: ResolveOptions,
 	path: string,

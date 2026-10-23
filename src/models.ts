@@ -283,6 +283,15 @@ export const NEON_MODELS: Model<"openai-completions">[] = [
 		cost: { input: 0.5, output: 3, cacheRead: 0.05, cacheWrite: 0 },
 	}),
 	m({
+		id: "gemini-4-argon",
+		name: "Gemini 4 Argon",
+		reasoning: true,
+		input: ["text", "image"],
+		context: 1_048_576,
+		output: 65_536,
+		cost: { input: 4, output: 20, cacheRead: 0.2, cacheWrite: 0 },
+	}),
+	m({
 		id: "gemma-3-12b",
 		name: "Gemma 3 12B",
 		reasoning: false,
@@ -596,6 +605,7 @@ export const MODEL_CAPABILITIES: Record<string, NeonModelCapabilities> = {
 	"gemini-3-7-flash": { temperature: false, toolCall: true },
 	"gemini-3-8-flash": { temperature: false, toolCall: true },
 	"gemini-3-flash": { temperature: true, toolCall: true },
+	"gemini-4-argon": { temperature: false, toolCall: true },
 	"gemma-3-12b": { temperature: true, toolCall: true },
 	"glm-5-2": { temperature: true, toolCall: true },
 	"glm-5-3": { temperature: true, toolCall: true },
@@ -892,4 +902,16 @@ export const RESPONSES_MODELS: Model<ResponsesApi>[] = [
 			max: "max",
 		},
 	}),
+];
+
+export interface NeonDecisionModel {
+	id: string;
+	name: string;
+	/** USD per million input tokens; decision models have no output charge. */
+	inputCost: number;
+}
+
+export const DECISION_MODELS: NeonDecisionModel[] = [
+	{ id: "openjev-qwen35-4b", name: "OpenJev (Qwen 3.5 4B)", inputCost: 0.042 },
+	{ id: "typesafeai-jev-1-14-0", name: "Jev 1.14", inputCost: 0.042 },
 ];
