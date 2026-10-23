@@ -13,6 +13,19 @@ function withBase(payload: Record<string, unknown>): Record<string, unknown> {
 }
 
 describe("transformNeonPayload", () => {
+	it.each(["gemini-4-argon", "DATABRICKS-GEMINI-4-ARGON"])("preserves Gemini 4 tool signatures and strips unsupported sampling for %s", (id) => {
+		const result = transformNeonPayload(withBase({
+			frequency_penalty: 1, presence_penalty: 1, temperature: 1, top_p: 1,
+			messages: [{ role: "assistant", tool_calls: [{ id: "tool-1", type: "function", function: { name: "echo", arguments: "{}" } }],
+				reasoning_details: [{ type: "reasoning.encrypted", format: "neon-gemini", id: "tool-1", data: "opaque-signature" }] }],
+		}), id) as Record<string, unknown>;
+		expect(result.frequency_penalty).toBeUndefined();
+		expect(result.presence_penalty).toBeUndefined();
+		expect(result.temperature).toBeUndefined();
+		expect(result.top_p).toBeUndefined();
+		expect(result.messages).toEqual([{ role: "assistant", tool_calls: [{ id: "tool-1", type: "function", function: { name: "echo", arguments: "{}" }, thoughtSignature: "opaque-signature" }] }]);
+	});
+
 	it("returns non-record values unchanged", () => {
 		expect(transformNeonPayload("hello", "gpt-5")).toBe("hello");
 		expect(transformNeonPayload(null, "gpt-5")).toBe(null);
@@ -206,8 +219,8 @@ describe("transformNeonPayload", () => {
 		it("leaves models outside the set untouched when tools are present", () => {
 			for (const model of NEON_MODELS) {
 				const id = canonicalModelId(model.id);
-				// The Claude branch strips reasoning_effort regardless of tools.
-				if (TOOL_EFFORT_NONE_MODELS.has(id) || id.includes("claude")) continue;
+				// Claude and Gemini 4 reject reasoning_effort regardless of tools.
+				if (TOOL_EFFORT_NONE_MODELS.has(id) || id.includes("claude") || id.startsWith("gemini-4-")) continue;
 				const result = transformNeonPayload(withBase({
 					reasoning_effort: "low",
 					tools: [{ type: "function", function: { name: "ls", parameters: {} } }],
@@ -245,6 +258,13 @@ describe("transformNeonPayload", () => {
 	});
 
 	describe("Gemini family", () => {
+		it.each(["none", "low", "high"])("omits Gemini 4 effort %s because the chat gateway rejects the field", (effort) => {
+			const input = withBase({ reasoning_effort: effort, tools: [{ type: "function", function: { name: "echo", parameters: {} } }] });
+			expect(transformNeonPayload(input, "gemini-4-argon")).not.toHaveProperty("reasoning_effort");
+			expect(transformNeonPayload(input, "gemini-3-8-flash")).toHaveProperty("reasoning_effort", effort);
+			expect(input.reasoning_effort).toBe(effort);
+		});
+
 		it("omits the streaming usage option rejected by Gemini without disabling streaming", () => {
 			const original = withBase({ stream: true, stream_options: { include_usage: true } });
 			for (const id of ["gemini-3-1-pro", "gemini-3-8-flash", "DATABRICKS-GEMINI-3-8-FLASH"]) {

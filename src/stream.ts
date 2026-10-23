@@ -152,11 +152,14 @@ export function transformNeonPayload(value: unknown, modelId: string): unknown {
 			version !== null && (Number(version[1]) < 4 || (Number(version[1]) === 4 && Number(version[2] ?? 0) <= 6));
 		if (!acceptsSampling) removeKeys(payload, ["temperature", "top_p"]);
 		else if (payload.temperature !== undefined) delete payload.top_p;
-	} else if (/^gemini-3-/u.test(id)) {
-		// The gateway forwards stream_options into Gemini's generation_config,
-		// which rejects it. Omitting the usage option keeps streaming enabled.
-		// Sampling support comes from the metadata layer above.
-		removeKeys(payload, ["frequency_penalty", "presence_penalty", "stream_options"]);
+	} else if (/^gemini-[34]-/u.test(id)) {
+		removeKeys(payload, ["frequency_penalty", "presence_penalty"]);
+		// Keep compatibility with gateway versions that forward this unsupported
+		// option into Gemini 3 generation_config. New gateways accept it.
+		if (id.startsWith("gemini-3-")) delete payload.stream_options;
+		// Live Gemini 4 requests reject this OpenAI field in generation_config.
+		// Keep the model's default thinking instead of inventing a native mapping.
+		if (id.startsWith("gemini-4-")) delete payload.reasoning_effort;
 		if (payload.messages !== undefined) payload.messages = replayGeminiSignatures(payload.messages);
 	} else if (id.includes("llama")) {
 		removeKeys(payload, ["frequency_penalty", "presence_penalty", "seed"]);
@@ -507,7 +510,7 @@ export function streamNeon(model: Model<Api>, context: Context, options?: Simple
 	const userOnPayload = options?.onPayload;
 	const wrappedOptions: SimpleStreamOptions = {
 		...options,
-		fetch: makeNeonFetch(options?.fetch, useArrayContent, /^gemini-3-/u.test(canonicalModelId(model.id))),
+		fetch: makeNeonFetch(options?.fetch, useArrayContent, /^gemini-[34]-/u.test(canonicalModelId(model.id))),
 		onPayload: async (payload, m) => {
 			const transformed = transformNeonPayload(payload, m.id);
 			if (!userOnPayload) return transformed;

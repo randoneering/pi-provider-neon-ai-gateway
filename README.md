@@ -79,12 +79,14 @@ A read-access key is enough for viewing. Changing the spending cap requires an o
 | `/neon-cap-block on` / `off` / `status` | yes | Opt-in guard that blocks turns when local spend reaches the binding limit |
 | `/neon-org list` | yes | List the orgs your management key can access |
 | `/neon-org use <id\|name>` | yes | Switch the active org, persist in `auth.json` |
-| `/neon-models` | no | List all Neon models with input, output, and cache-read pricing |
+| `/neon-models` | no | List Neon chat models with input, output, and cache-read pricing |
+| `/neon-decide enable` / `disable` / `status` | no | Control the optional Jev decision tool; gateway credentials are required for calls |
 | `/neon-limits` | no | Show the latest upstream rate-limit headers from 429 responses |
 
 ### `/neon-balance`
 
-Fetches the real prepaid credit balance from `/organizations/{org_id}/billing/aigw_credits/balance` and the spending cap from `/organizations/{org_id}/billing/spending_limit`. Local spend is aggregated from the session JSONL files under `~/.pi/agent/sessions/` for both the `neon` and `neon-anthropic` providers; alerts, footer percentages, and the opt-in cap guard use that same combined local spend.
+Fetches the real prepaid credit balance from `/organizations/{org_id}/billing/aigw_credits/balance` and the spending cap from `/organizations/{org_id}/billing/spending_limit`. Local spend is aggregated from the session JSONL files under `~/.pi/agent/sessions/` for `neon`, `neon-anthropic`, `neon-responses`, and successful `neon_decide` tool calls.
+Alerts, footer percentages, and the opt-in cap guard use that same combined local spend.
 
 ```text
 Neon account balance:
@@ -166,6 +168,57 @@ The active org is marked with `*` in the list output. The first time you run one
 Pick `neon/<model-id>` for chat completions, `neon-anthropic/<claude-id>` for native Claude, or `neon-responses/<gpt-id>` for the two Responses-only models.
 Run `pi --list-models` to see the catalog and `/neon-models` for pricing.
 
+### Decision models (opt-in)
+
+The `neon_decide` tool uses [Neon's decision endpoint](https://neon.com/docs/ai-gateway/decisions) to classify, route, or score text and JSON.
+It defaults to **disabled**, so it does not compete with another decision tool such as `pi-jev`.
+
+```text
+/neon-decide enable
+/neon-decide status
+/neon-decide disable
+```
+
+Changes take effect immediately and persist in `neon-decisions.json` under pi's agent directory, normally `~/.pi/agent/`.
+Disabling hides the tool and blocks new calls, including calls from stale declarations.
+It does not cancel a request that already started, change your chat model, or disable tools from other packages.
+The preference stays separate from gateway credentials and survives `/neon-logout`.
+
+Enable the tool, then ask pi to call `neon_decide` with arguments such as:
+
+```json
+{
+  "state": "I was charged twice. Please refund the duplicate payment.",
+  "questions": {
+    "refund": { "type": "noul", "instructions": "Is a refund requested?" },
+    "department": {
+      "type": "choice",
+      "instructions": "Which team should handle this?",
+      "criteria": { "billing": "Payments and refunds", "support": "Other requests" }
+    },
+    "severity": {
+      "type": "score",
+      "instructions": "How serious is the issue?",
+      "criteria": ["Cosmetic", "Incorrect charge", "Cannot access service"]
+    }
+  }
+}
+```
+
+`state` accepts text or a JSON object.
+Each question returns a probability (`noul`), an option with probabilities (`choice`), or a numeric level with probabilities (`score`).
+Choice and score questions need at least two options or levels.
+
+| Model | Selection | Input price per million tokens |
+|---|---|---|
+| Jev 1.14 | Default, or `"model": "typesafeai-jev-1-14-0"` | $0.042 |
+| OpenJev (Qwen 3.5 4B) | `"model": "openjev-qwen35-4b"` | $0.042 |
+
+Calls reuse `/neon-login` credentials or `NEON_AI_GATEWAY_TOKEN` and `NEON_AI_GATEWAY_BASE_URL`.
+The tool sends only the supplied state and questions to `/typesafe/v1/systemone`, bills input tokens only, and reports usage in pi and local Neon spending totals.
+Requests support cancellation, time out after 30 seconds, and do not retry automatically.
+Decision models do not support chat or streaming and do not appear in the `/model` picker.
+
 ## Models
 
 Sourced from [neon.com/models.json](https://neon.com/models.json). The catalog and its per-model capability table are generated: run `npm run update-models` after upstream changes. The capability table (which models reject `temperature`, which support tools) drives the payload cleanup in `src/stream.ts`.
@@ -176,7 +229,7 @@ The `neon` provider uses Chat Completions; `neon-anthropic` uses native Anthropi
 
 - **Anthropic**: claude-fable-5, claude-fable-5-1, claude-haiku-4-5, claude-haiku-5-5, claude-opus-4-1, claude-opus-4-5, claude-opus-4-6, claude-opus-4-7, claude-opus-4-8, claude-opus-5, claude-opus-5-5, claude-sonnet-4-5, claude-sonnet-4-6, claude-sonnet-5, claude-sonnet-5-5
 - **OpenAI**: gpt-5, gpt-5-mini, gpt-5-nano, gpt-5-1, gpt-5-2, gpt-5-4, gpt-5-4-mini, gpt-5-4-nano, gpt-5-5, gpt-5-6-luna, gpt-5-6-sol, gpt-5-6-terra, gpt-6-1-sol, gpt-6-astra, gpt-6-luna, gpt-6-sol, gpt-oss-120b, gpt-oss-20b; plus `gpt-5-3-codex` and `gpt-5-5-pro` on `neon-responses`
-- **Google**: gemini-3-1-flash-lite, gemini-3-1-pro, gemini-3-5-flash, gemini-3-5-flash-lite, gemini-3-6-flash, gemini-3-7-flash, gemini-3-8-flash, gemini-3-flash, gemma-3-12b
+- **Google**: gemini-3-1-flash-lite, gemini-3-1-pro, gemini-3-5-flash, gemini-3-5-flash-lite, gemini-3-6-flash, gemini-3-7-flash, gemini-3-8-flash, gemini-3-flash, gemini-4-argon, gemma-3-12b
 - **Meta**: llama-4-maverick, meta-llama-3-1-8b-instruct, meta-llama-3-3-70b-instruct
 - **xAI**: grok-4-6, grok-4-7
 - **DeepSeek**: deepseek-v4-1-flash
@@ -184,17 +237,21 @@ The `neon` provider uses Chat Completions; `neon-anthropic` uses native Anthropi
 - **Alibaba**: qwen3-next-80b-a3b-instruct, qwen35-122b-a10b
 - **ZhipuAI**: glm-5-2, glm-5-3, glm-5-3-flash
 - **Thinking Machines**: inkling
+- **TypeSafe decisions**: Jev 1.14 and OpenJev through the optional `neon_decide` tool, separate from chat
 
-The Claude models work on both providers: chat completions on `neon` and native Anthropic Messages on `neon-anthropic`. Every other family is chat completions only.
+Claude models support chat completions on `neon` and native Anthropic Messages on `neon-anthropic`.
+OpenAI Responses models use `neon-responses`; TypeSafe decision models use `neon_decide`.
 This list is a snapshot; the generated catalog is the source of truth, so check `/neon-models` or `pi --list-models` for the current set.
 
-GPT-5.x, Gemini 3.x, Grok, and Inkling are foundation models and need the **Apply for access** step in the Console. The rest work as soon as credits are loaded.
+All catalog models are available on a paid plan with prepaid credits; a separate access request is no longer required.
 
 ### Model compatibility
 
 Gemini 3 streaming omits the rejected `stream_options` field.
-Tool calls keep their opaque [thought signatures](https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures) through saved history and replay, and a final `stop` becomes `tool_calls` only when that choice emitted tools.
+Gemini 3 and 4 tool calls keep their opaque [thought signatures](https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures) through saved history and replay, and a final `stop` becomes `tool_calls` only when that choice emitted tools.
 Normal text stops and truncation stay unchanged.
+Gemini 4 Argon uses its default thinking behavior: the chat gateway rejects `reasoning_effort`, so the extension omits it.
+Pi's thinking selection does not control Gemini 4 reasoning depth on this endpoint.
 
 Newer Claude models on `neon-anthropic` use these native thinking modes:
 
@@ -241,7 +298,7 @@ Beyond request handling, the extension adds local spend tracking, spending cap a
 ## Develop
 
 ```bash
-npm install
+npm ci
 npm test               # unit tests
 npm run check          # type check
 npm run test:smoke     # hits a real Neon endpoint (needs NEON_AI_GATEWAY_TOKEN + NEON_AI_GATEWAY_BASE_URL)
@@ -256,6 +313,7 @@ npm run test:smoke -- claude-sonnet-4-6 --provider neon-anthropic --tools
 npm run test:smoke -- gpt-5-5-pro --provider neon-responses --tools --thinking
 npm run test:smoke -- gpt-6-luna --provider neon --tools --thinking
 npm run test:smoke -- gemini-3-8-flash --provider neon --tools
+npm run test:smoke -- gemini-4-argon --provider neon --tools
 npm run test:smoke -- claude-sonnet-5-5 --provider neon-anthropic --tools --thinking
 ```
 
@@ -264,12 +322,22 @@ Without `--provider`, Claude models use `neon-anthropic`, the two Responses-only
 The check fails on gateway errors, missing or unexpected tool calls, truncated responses, or a reply other than `smoke test ok`.
 Luna chat-completions tool calls use `reasoning_effort: "none"`, even with `--thinking`, because the gateway requires it.
 
+Decision smoke tests use the same request helper as the tool and accept environment or stored Neon credentials:
+
+```bash
+npm run test:smoke:decisions -- typesafeai-jev-1-14-0
+npm run test:smoke:decisions -- openjev-qwen35-4b
+```
+
+These explicit smoke commands make paid requests even when the agent-facing decision tool is disabled.
+
 ## Docs
 
 - [Overview](https://neon.com/docs/ai-gateway/overview)
 - [Authentication](https://neon.com/docs/ai-gateway/authentication)
 - [Model catalog](https://neon.com/docs/ai-gateway/models)
 - [Chat completions](https://neon.com/docs/ai-gateway/chat-completions)
+- [Decisions](https://neon.com/docs/ai-gateway/decisions)
 - [Troubleshooting](https://neon.com/docs/ai-gateway/troubleshooting)
 
 ## License

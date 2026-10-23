@@ -8,7 +8,9 @@
 
 - `src/config.ts`: environment and credential configuration.
 - `src/auth.ts`: `/neon-login`, `/neon-logout`, and `/neon-status` commands.
-- `src/models.ts`: the static Neon model catalog.
+- `src/models.ts`: the generated Neon chat and decision model catalogs.
+- `src/decisions.ts`: decision question validation, HTTP requests, and input-only usage.
+- `src/decision-tool.ts`: optional `neon_decide` tool and persistent `/neon-decide` controls.
 - `src/stream.ts`: request transformation, response normalization, and streaming.
 - `src/index.ts`: provider registration.
 - `test/`: Vitest unit tests and the gateway smoke test.
@@ -29,7 +31,8 @@ Use the upstream documentation when checking model limits, request fields, authe
 - Install dependencies with `npm ci`.
 - Run `npm run check` for TypeScript checks.
 - Run `npm test` for unit tests.
-- Run `npm run test:smoke` only when gateway credentials are available.
+- Run `npm run test:smoke` and `npm run test:smoke:decisions` only when gateway credentials are available.
+- Decision smoke commands make paid requests independently of the default-off tool preference.
 - Run `npm pack --dry-run` when changing package contents.
 
 Every behavior change needs a regression test. Keep provider-specific behavior in `src/stream.ts` or a focused helper instead of spreading model rules across the extension.

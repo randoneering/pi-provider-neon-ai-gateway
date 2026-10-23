@@ -6,6 +6,10 @@ All notable changes to `pi-provider-neon-ai-gateway` are documented here. Versio
 
 ### Added
 
+- Optional `neon_decide` tool for Jev 1.14 and OpenJev on `/typesafe/v1/systemone`, with typed `noul`, `choice`, and `score` questions, structured answers, cancellation, and a 30-second timeout.
+- `/neon-decide enable`, `disable`, and `status` control the tool immediately and persist the preference across sessions. Decision support defaults to disabled so users can keep another decision integration such as `pi-jev`.
+- Decision calls reuse gateway credentials, report input-only costs in pi, and contribute to local Neon spending totals. `npm run test:smoke:decisions -- <model-id>` checks the live decision API.
+- Gemini 4 Argon (`gemini-4-argon`) with upstream limits, modalities, capabilities, and pricing. The generated catalog now includes 56 chat models and a separate two-model decision catalog.
 - `/neon-login` stores credentials for both `neon` and `neon-anthropic`, `/neon-status` reports each provider, and `/neon-logout` removes both stored credentials.
 - Local spend, cap alerts and blocking, footer percentages, and rate-limit capture now include Anthropic provider responses.
 - 13 new Claude chat models from `https://neon.com/models.json`: `claude-fable-5`, `claude-fable-5-1`, `claude-haiku-4-5`, `claude-sonnet-4-5`, `claude-sonnet-4-6`, `claude-sonnet-5`, `claude-opus-4-1`, `claude-opus-4-5`, `claude-opus-4-6`, `claude-opus-4-7`, `claude-opus-4-8`, `claude-opus-5`, `claude-opus-5-5`. Regenerate the catalog with `npm run update-models`.
@@ -24,6 +28,9 @@ All notable changes to `pi-provider-neon-ai-gateway` are documented here. Versio
 
 ### Fixed
 
+- Decision and embedding model types cannot enter the chat catalog, even when their family does not identify them as non-chat. Jev models no longer generate invalid chat entries with zero token limits.
+- Gemini 4 tool calls preserve thought signatures through saved history and normalize a final `stop` after tools to `tool_calls`. A live tool round trip reproduces the missing normalization before the fix and passes afterward.
+- Gemini 4 requests omit the gateway-rejected `reasoning_effort` field. The model uses its default thinking behavior; pi's thinking selection cannot change its reasoning depth through chat completions.
 - Gemini 3 streaming omits the gateway-rejected `stream_options` field without disabling streaming.
 - Gemini tool calls preserve opaque thought signatures through saved assistant history and tool replay, and normalize a final `stop` to `tool_calls` only after that choice emits tools.
 - Newer native Claude models use adaptive thinking with `output_config.effort`, Sonnet 5.5 uses `between_tools` when thinking is off, and unsupported sampling stays out of native requests.

@@ -14,6 +14,13 @@ const fixture: UpstreamModel = {
 };
 
 describe("isChatModel", () => {
+	it("excludes explicit non-chat types independently of family", () => {
+		expect(isChatModel({ id: "typesafeai-jev-1-14-0", type: "decision" })).toBe(false);
+		expect(isChatModel({ id: "bge-large-en", type: "embedding" })).toBe(false);
+		expect(isChatModel({ id: "future-image-model", type: "image" })).toBe(false);
+		expect(isChatModel({ id: "future-chat-model", type: "chat" })).toBe(true);
+	});
+
 	it("excludes embedding families", () => {
 		expect(isChatModel({ id: "gte-large-en", family: "text-embedding" })).toBe(false);
 		expect(isChatModel({ id: "qwen3-embedding-0-6b", family: "text-embedding" })).toBe(false);
@@ -70,6 +77,22 @@ describe("toNeonModelInput", () => {
 });
 
 describe("buildModelsSource", () => {
+	it("generates decision metadata without registering decision models as chat", () => {
+		const source = buildModelsSource([
+			{ id: "typesafeai-jev-1-14-0", name: "Jev 1.14", type: "decision", cost: { input: 0.042 } },
+			{ id: "openjev-qwen35-4b", name: "OpenJev (Qwen 3.5 4B)", type: "decision", cost: { input: 0.042 } },
+			{ id: "unreleased-decision", type: "decision", released: false },
+			{ id: "bge-large-en", type: "embedding" },
+		]);
+		const chat = source.slice(source.indexOf("export const NEON_MODELS"), source.indexOf("export interface NeonModelCapabilities"));
+		expect(chat).not.toContain("typesafeai-jev");
+		expect(chat).not.toContain("openjev");
+		expect(chat).not.toContain("bge-large-en");
+		expect(source).toContain("export const DECISION_MODELS");
+		expect(source).toContain('id: "typesafeai-jev-1-14-0", name: "Jev 1.14", inputCost: 0.042');
+		expect(source).not.toContain("unreleased-decision");
+	});
+
 	it("emits a sorted, deterministic module with capabilities and scaffold", () => {
 		const a = buildModelsSource([fixture, { id: "gpt-5", name: "GPT-5", temperature: false, tool_call: true }]);
 		const b = buildModelsSource([{ id: "gpt-5", name: "GPT-5", temperature: false, tool_call: true }, fixture]);

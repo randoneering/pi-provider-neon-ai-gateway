@@ -6,6 +6,7 @@ import {
 	NEON_AI_GATEWAY_TOKEN_ENV,
 	normalizeNeonBaseUrl,
 	resolveNeonManagementKey,
+	resolveNeonDecisionBaseUrl,
 } from "../src/config.js";
 
 describe("config constants", () => {
@@ -227,5 +228,26 @@ describe("resolveNeonResponsesBaseUrl", () => {
 			processEnv: { NEON_AI_GATEWAY_BASE_URL: "https://from-process.ai.neon.tech/v1" },
 		});
 		expect(result).toBe("https://from-process.ai.neon.tech/openai/v1");
+	});
+});
+
+describe("resolveNeonDecisionBaseUrl", () => {
+	it.each([
+		["https://branch.example", "https://branch.example/typesafe/v1"],
+		["https://branch.example/v1/", "https://branch.example/typesafe/v1"],
+		["https://branch.example/typesafe/", "https://branch.example/typesafe/v1"],
+		["https://branch.example/typesafe/v1/", "https://branch.example/typesafe/v1"],
+		["https://branch.example/gateway/typesafe/v1", "https://branch.example/gateway/typesafe/v1"],
+	])("normalizes %s", (input, expected) => {
+		expect(resolveNeonDecisionBaseUrl({ processEnv: { NEON_AI_GATEWAY_BASE_URL: input } })).toBe(expected);
+	});
+
+	it("prefers stored credential environment and rejects unsafe URLs", () => {
+		expect(resolveNeonDecisionBaseUrl({
+			processEnv: { NEON_AI_GATEWAY_BASE_URL: "https://process.example" },
+			credentialEnv: { NEON_AI_GATEWAY_BASE_URL: "https://stored.example" },
+		})).toBe("https://stored.example/typesafe/v1");
+		expect(resolveNeonDecisionBaseUrl({ processEnv: {} })).toBeUndefined();
+		expect(() => resolveNeonDecisionBaseUrl({ processEnv: { NEON_AI_GATEWAY_BASE_URL: "https://user:pass@branch.example" } })).toThrow(/credentials/);
 	});
 });

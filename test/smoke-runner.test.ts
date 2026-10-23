@@ -205,26 +205,26 @@ describe("smoke runner through real extension adapters", () => {
 		expect(requests[0]?.body).not.toHaveProperty("stream_options");
 	});
 
-	it("normalizes Gemini's stop after tool calls and resets state for the next request", async () => {
+	it.each(["gemini-3-8-flash", "gemini-4-argon"])("normalizes %s stop after tools and resets state for the next request", async (modelId) => {
 		const { fetch, requests } = captureFetch([
 			() => chatResponse([{ index: 0, id: "call_test", type: "function", function: {
 				name: "smoke_echo", arguments: JSON.stringify({ message: OK }),
 			} }], "stop"),
 			() => chatResponse(OK),
 		]);
-		const result = await runSmoke(parseSmokeArgs(["gemini-3-8-flash", "--tools"]), streamOptions(fetch));
+		const result = await runSmoke(parseSmokeArgs([modelId, "--tools"]), streamOptions(fetch));
 		expect(result.map((message) => message.stopReason)).toEqual(["toolUse", "stop"]);
 		expect(requests).toHaveLength(2);
 	});
 
-	it("preserves Gemini thought signatures through assistant history and tool replay", async () => {
+	it.each(["gemini-3-8-flash", "gemini-4-argon"])("preserves %s thought signatures through saved history and tool replay", async (modelId) => {
 		const { fetch, requests } = captureFetch([
 			() => chatResponse([{ index: 0, id: "call_test", type: "function", thoughtSignature: "fake-opaque-signature", function: {
 				name: "smoke_echo", arguments: JSON.stringify({ message: OK }),
 			} }], "stop"),
 			() => chatResponse(OK),
 		]);
-		const result = await runSmoke(parseSmokeArgs(["gemini-3-8-flash", "--tools"]), streamOptions(fetch));
+		const result = await runSmoke(parseSmokeArgs([modelId, "--tools"]), streamOptions(fetch));
 		expect(JSON.stringify(result[0])).toContain("fake-opaque-signature");
 		expect(requests[1]?.body.messages).toEqual(expect.arrayContaining([
 			expect.objectContaining({ role: "assistant", tool_calls: expect.arrayContaining([
@@ -237,7 +237,7 @@ describe("smoke runner through real extension adapters", () => {
 
 		const saved = JSON.parse(JSON.stringify(result[0])) as AssistantMessage;
 		const replay = captureFetch([() => chatResponse(OK)]);
-		await streamNeon(selectSmokeModel(parseSmokeArgs(["gemini-3-8-flash"])), {
+		await streamNeon(selectSmokeModel(parseSmokeArgs([modelId])), {
 			messages: [
 				{ role: "user", content: "Echo a message", timestamp: 0 },
 				saved,
