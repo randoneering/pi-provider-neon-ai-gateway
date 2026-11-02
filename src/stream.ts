@@ -396,6 +396,31 @@ export function enrichRateLimitMessage(body: unknown, retryAfterHeader: string |
 	};
 }
 
+const TOOL_LIMIT_REMEDY =
+	"the upstream limit is 128 tools per request for OpenAI models. Disable MCP servers or unused tools, or switch to a non-OpenAI model such as Claude or Gemini";
+
+/**
+ * Add an actionable remedy when the upstream rejects a request for carrying
+ * more than the 128 tools OpenAI models accept. Other bodies are returned
+ * unchanged. Verified against the live gateway: gpt-6-luna rejects 129 tools
+ * while Gemini, Claude, Kimi, and GLM accept them.
+ */
+export function enrichToolLimitMessage(body: unknown): unknown {
+	if (!isRecord(body) || !isRecord(body.error)) return body;
+	const error = body.error as Record<string, unknown>;
+	const message = error.message;
+	if (typeof message !== "string") return body;
+	if (!/Invalid 'tools': array too long/u.test(message)) return body;
+	if (message.includes(TOOL_LIMIT_REMEDY)) return body;
+	return {
+		...body,
+		error: {
+			...error,
+			message: `${message}; ${TOOL_LIMIT_REMEDY}`,
+		},
+	};
+}
+
 /**
  * Wrap a fetch function so Neon's flat `{ error_code, message }` error JSON
  * becomes the nested `{ error: { message } }` envelope pi expects. Ok SSE
@@ -435,6 +460,9 @@ export function makeNeonFetch(baseFetch: FetchFunction | undefined, isArrayConte
 		if (normalized === undefined) return response;
 		if (response.status === 429) {
 			normalized = enrichRateLimitMessage(normalized, response.headers.get("retry-after"));
+		}
+		if (response.status === 400) {
+			normalized = enrichToolLimitMessage(normalized);
 		}
 		return new Response(JSON.stringify(normalized), {
 			status: response.status,
