@@ -1,5 +1,25 @@
 import { describe, expect, it } from "vitest";
-import { ANTHROPIC_MODELS, canonicalModelId, DECISION_MODELS, MODEL_CAPABILITIES, NEON_MODELS, isKnownNeonModel } from "../src/models.js";
+import { calculateCost, type Usage } from "@earendil-works/pi-ai";
+import { ANTHROPIC_MODELS, canonicalModelId, DECISION_MODELS, MODEL_CAPABILITIES, NEON_MODELS, RESPONSES_MODELS, isKnownNeonModel } from "../src/models.js";
+
+describe("context-tier costs", () => {
+	it("applies the higher tier above the input threshold including cached tokens", () => {
+		const model = NEON_MODELS.find((entry) => entry.id === "gpt-5-6-terra")!;
+		const usage: Usage = { input: 200_000, output: 100, cacheRead: 72_000, cacheWrite: 0, totalTokens: 272_100, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
+		expect(calculateCost(model, usage).input).toBeCloseTo(0.4);
+		usage.input++;
+		expect(calculateCost(model, usage).input).toBeCloseTo(0.800004);
+		expect(usage.cost.cacheRead).toBeCloseTo(0.0288);
+	});
+
+	it("applies Responses and Anthropic tier metadata", () => {
+		const responses = RESPONSES_MODELS.find((entry) => entry.id === "gpt-5-5-pro")!;
+		const anthropic = ANTHROPIC_MODELS.find((entry) => entry.id === "claude-haiku-5-5")!;
+		const usage: Usage = { input: 272_001, output: 100, cacheRead: 0, cacheWrite: 0, totalTokens: 272_101, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
+		expect(calculateCost(responses, usage).input).toBeCloseTo(16.32006);
+		expect(calculateCost(anthropic, usage).input).toBeCloseTo(0.1360005);
+	});
+});
 
 describe("NEON_MODELS", () => {
 	it("registers Gemini 4 Argon with its published limits, prices, and sampling support", () => {

@@ -32,7 +32,24 @@ export interface UpstreamModel {
 		cache_read?: number;
 		/** USD per million tokens for cache writes; omitted when not published. */
 		cache_write?: number;
+		tiers?: { input?: number; output?: number; cache_read?: number; cache_write?: number; tier?: { type?: string; size?: number } }[];
 	};
+}
+
+interface NeonCostTier {
+	inputTokensAbove: number;
+	input: number;
+	output: number;
+	cacheRead: number;
+	cacheWrite: number;
+}
+
+interface NeonCost {
+	input: number;
+	output: number;
+	cacheRead: number;
+	cacheWrite: number;
+	tiers?: NeonCostTier[];
 }
 
 interface NeonModelInput {
@@ -42,7 +59,7 @@ interface NeonModelInput {
 	input: ("text" | "image")[];
 	context: number;
 	output: number;
-	cost: { input: number; output: number; cacheRead: number; cacheWrite: number };
+	cost: NeonCost;
 }
 
 /**
@@ -258,6 +275,26 @@ export function isReleased(model: UpstreamModel): boolean {
 
 const PI_INPUT = new Set(["text", "image"]);
 
+function tierCost(model: UpstreamModel): Pick<NeonCost, "tiers"> {
+	if (!model.cost?.tiers?.length) return {};
+	const tiers = model.cost.tiers.map((entry): NeonCostTier => {
+		const threshold = entry.tier?.size;
+		if (entry.tier?.type !== "context" || !Number.isSafeInteger(threshold) || threshold! < 0 ||
+			typeof entry.input !== "number" || !Number.isFinite(entry.input) || entry.input < 0 ||
+			typeof entry.output !== "number" || !Number.isFinite(entry.output) || entry.output < 0 ||
+			[entry.cache_read, entry.cache_write].some((price) => price !== undefined && (typeof price !== "number" || !Number.isFinite(price) || price < 0))) {
+			throw new Error(`Invalid context pricing tier for ${model.id}.`);
+		}
+		return {
+			inputTokensAbove: threshold!, input: entry.input, output: entry.output,
+			// OpenAI publishes no cached-input discount for GPT-5.5 Pro.
+			cacheRead: entry.cache_read ?? (model.id.toLowerCase() === "gpt-5-5-pro" ? entry.input : model.cost?.cache_read ?? 0),
+			cacheWrite: entry.cache_write ?? model.cost?.cache_write ?? 0,
+		};
+	});
+	return { tiers };
+}
+
 /** Map an upstream entry onto the chat-model shape pi expects. */
 export function toNeonModelInput(model: UpstreamModel): NeonModelInput {
 	return {
@@ -272,6 +309,7 @@ export function toNeonModelInput(model: UpstreamModel): NeonModelInput {
 			output: model.cost?.output ?? 0,
 			cacheRead: model.cost?.cache_read ?? 0,
 			cacheWrite: model.cost?.cache_write ?? 0,
+			...tierCost(model),
 		},
 	};
 }
@@ -281,6 +319,7 @@ function fmt(n: number): string {
 }
 
 function entrySource(entry: NeonModelInput): string {
+	const tiers = entry.cost.tiers?.map((tier) => `{ inputTokensAbove: ${tier.inputTokensAbove}, input: ${tier.input}, output: ${tier.output}, cacheRead: ${tier.cacheRead}, cacheWrite: ${tier.cacheWrite} }`).join(", ");
 	return [
 		"\tm({",
 		`\t\tid: ${JSON.stringify(entry.id)},`,
@@ -289,7 +328,7 @@ function entrySource(entry: NeonModelInput): string {
 		`\t\tinput: [${entry.input.map((i) => JSON.stringify(i)).join(", ")}],`,
 		`\t\tcontext: ${fmt(entry.context)},`,
 		`\t\toutput: ${fmt(entry.output)},`,
-		`\t\tcost: { input: ${entry.cost.input}, output: ${entry.cost.output}, cacheRead: ${entry.cost.cacheRead}, cacheWrite: ${entry.cost.cacheWrite} },`,
+		`\t\tcost: { input: ${entry.cost.input}, output: ${entry.cost.output}, cacheRead: ${entry.cost.cacheRead}, cacheWrite: ${entry.cost.cacheWrite}${tiers ? `, tiers: [${tiers}]` : ""} },`,
 		"\t}),",
 	].join("\n");
 }
@@ -335,7 +374,7 @@ export function buildModelsSource(models: UpstreamModel[]): string {
 			temperature: upstream ? upstream.temperature === true : spec.temperature,
 			toolCall: upstream ? upstream.tool_call === true : spec.toolCall,
 		});
-		return { spec, thinkingLevelMap: thinkingLevelMapFor(resolveResponsesEfforts(spec, models)) };
+		return { spec: { ...spec, cost: { ...spec.cost, ...(upstream ? tierCost(upstream) : {}) } }, thinkingLevelMap: thinkingLevelMapFor(resolveResponsesEfforts(spec, models)) };
 	});
 	const capEntries = Array.from(capabilities.entries())
 		.sort(([a], [b]) => a.localeCompare(b))
@@ -356,7 +395,8 @@ export function buildModelsSource(models: UpstreamModel[]): string {
 //
 // Costs are USD per million tokens. Chat cache prices come from the
 // upstream cache_read/cache_write keys and default to 0 when omitted.
-// Responses model prices are maintained in scripts/update-models.ts.
+// Responses base prices are maintained in scripts/update-models.ts.
+// Context tiers come from the upstream catalog.
 
 import type { Model, ThinkingLevelMap } from "@earendil-works/pi-ai";
 
@@ -371,7 +411,7 @@ interface NeonModelInput {
 	input: ("text" | "image")[];
 	context: number;
 	output: number;
-	cost: { input: number; output: number; cacheRead: number; cacheWrite: number };
+	cost: Model<Api>["cost"];
 }
 
 interface CommonModelInput {
@@ -380,7 +420,7 @@ interface CommonModelInput {
 	baseUrl: string;
 	reasoning: boolean;
 	input: ("text" | "image")[];
-	cost: { input: number; output: number; cacheRead: number; cacheWrite: number };
+	cost: Model<Api>["cost"];
 	contextWindow: number;
 	maxTokens: number;
 }

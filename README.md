@@ -250,6 +250,8 @@ Decision models do not support chat or streaming and do not appear in the `/mode
 ## Models
 
 Sourced from [neon.com/models.json](https://neon.com/models.json). The catalog and its per-model capability table are generated: run `npm run update-models` after upstream changes. The capability table (which models reject `temperature`, which support tools) drives the payload cleanup in `src/stream.ts`.
+Generated model costs include published context-length tiers, so pi uses the higher rate when input tokens, including cache tokens, exceed the model's threshold.
+These remain estimates: missing cache rates fall back to the base rate, and GPT-5.5 Pro uses its input rate for cache reads because OpenAI publishes no cache discount.
 
 The `neon` provider uses Chat Completions; `neon-anthropic` uses native Anthropic Messages; `neon-responses` uses the OpenAI Responses API at `/openai/v1/responses`.
 `gpt-5-3-codex` and `gpt-5-5-pro` require the Responses endpoint, so they are exposed only on `neon-responses` ([Neon endpoint guidance](https://neon.com/docs/ai-gateway/models#which-endpoint-to-use)).

@@ -77,6 +77,19 @@ describe("toNeonModelInput", () => {
 });
 
 describe("buildModelsSource", () => {
+	it("rejects malformed tier pricing instead of emitting invalid costs", () => {
+		expect(() => buildModelsSource([{ id: "bad-tier", cost: { tiers: [{ input: 1, output: 2, tier: { type: "context", size: -1 } }] } }])).toThrow(/Invalid context pricing tier/);
+		expect(() => buildModelsSource([{ id: "bad-tier", cost: { tiers: [{ input: 1, output: 2, cache_read: -1, tier: { type: "context", size: 100 } }] } }])).toThrow(/Invalid context pricing tier/);
+	});
+
+	it("generates context pricing tiers for chat and Responses models", () => {
+		const source = buildModelsSource([
+			{ ...fixture, cost: { input: 0.2, output: 1.2, cache_read: 0.02, cache_write: 0.25, tiers: [{ input: 0.4, output: 1.8, cache_read: 0.04, cache_write: 0.5, tier: { type: "context", size: 272000 } }] } },
+			{ id: "gpt-5-5-pro", cost: { input: 30, output: 180, tiers: [{ input: 60, output: 270, tier: { type: "context", size: 272000 } }] } },
+		]);
+		expect(source).toContain("inputTokensAbove: 272000, input: 0.4, output: 1.8, cacheRead: 0.04, cacheWrite: 0.5");
+		expect(responsesEntryBlock(source, "gpt-5-5-pro")).toContain("inputTokensAbove: 272000, input: 60, output: 270, cacheRead: 60, cacheWrite: 0");
+	});
 	it("generates decision metadata without registering decision models as chat", () => {
 		const source = buildModelsSource([
 			{ id: "typesafeai-jev-1-14-0", name: "Jev 1.14", type: "decision", cost: { input: 0.042 } },
