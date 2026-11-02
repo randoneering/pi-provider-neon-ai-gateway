@@ -28,6 +28,7 @@ All notable changes to `pi-provider-neon-ai-gateway` are documented here. Versio
 
 ### Fixed
 
+- GPT-5.5 Pro cached input uses the standard $30 per million token rate for local cost estimates; OpenAI publishes no cached-input discount for this model.
 - Decision and embedding model types cannot enter the chat catalog, even when their family does not identify them as non-chat. Jev models no longer generate invalid chat entries with zero token limits.
 - Gemini 4 tool calls preserve thought signatures through saved history and normalize a final `stop` after tools to `tool_calls`. A live tool round trip reproduces the missing normalization before the fix and passes afterward.
 - Gemini 4 requests omit the gateway-rejected `reasoning_effort` field. The model uses its default thinking behavior; pi's thinking selection cannot change its reasoning depth through chat completions.
