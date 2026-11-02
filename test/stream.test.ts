@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	enrichRateLimitMessage,
+	enrichToolLimitMessage,
 	extractArrayContent,
 	isArrayContentModel,
 	TOOL_EFFORT_NONE_MODELS,
@@ -510,6 +511,51 @@ describe("enrichRateLimitMessage", () => {
 		const original = { message: "server error" };
 		expect(enrichRateLimitMessage(original, "47")).toBe(original);
 		expect(enrichRateLimitMessage({ error: "server error" }, "47")).toEqual({ error: "server error" });
+	});
+});
+
+describe("enrichToolLimitMessage", () => {
+	const toolLimitBody = (length: number) => ({
+		error: {
+			message: `ai gateway upstream model rejected the request: Invalid 'tools': array too long. Expected an array with maximum length 128, but got an array with length ${length} instead.`,
+			type: "BAD_REQUEST",
+			code: "BAD_REQUEST",
+		},
+	});
+
+	it("appends the tool-limit remedy to the upstream 128-tool rejection", () => {
+		const result = enrichToolLimitMessage(toolLimitBody(154)) as { error: { message: string } };
+		expect(result.error.message).toContain("array too long. Expected an array with maximum length 128");
+		expect(result.error.message).toContain("154");
+		expect(result.error.message).toContain("128 tools");
+		expect(result.error.message.toLowerCase()).toContain("disable mcp servers");
+		expect(result.error.message.toLowerCase()).toContain("non-openai");
+	});
+
+	it("does not enrich twice when the remedy is already present", () => {
+		const once = enrichToolLimitMessage(toolLimitBody(129)) as { error: { message: string } };
+		const twice = enrichToolLimitMessage(once) as { error: { message: string } };
+		expect(twice).toBe(once);
+		expect(once.error.message).toMatch(/array too long[^;]*;/);
+		expect(once.error.message.split("; ").length).toBe(2);
+	});
+
+	it("leaves unrelated BAD_REQUEST errors unchanged", () => {
+		const original = {
+			error: {
+				message: "ai gateway upstream model rejected the request: Invalid 'temperature': field not allowed",
+				type: "BAD_REQUEST",
+				code: "BAD_REQUEST",
+			},
+		};
+		expect(enrichToolLimitMessage(original)).toBe(original);
+	});
+
+	it("leaves non-error bodies and non-string messages unchanged", () => {
+		const original = { message: "bad request" };
+		expect(enrichToolLimitMessage(original)).toBe(original);
+		expect(enrichToolLimitMessage({ error: "bad request" })).toEqual({ error: "bad request" });
+		expect(enrichToolLimitMessage({ error: { message: 42 } })).toEqual({ error: { message: 42 } });
 	});
 });
 

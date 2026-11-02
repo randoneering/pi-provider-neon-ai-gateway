@@ -275,6 +275,7 @@ The gateway speaks standard OpenAI Chat Completions. Common status codes:
 
 | Status | What it means |
 |---|---|
+| 400 | Bad request. Notable: OpenAI models reject requests with more than 128 tools (`Invalid 'tools': array too long`) |
 | 401 | Missing or invalid token |
 | 403 | Token lacks `ai_gateway:invoke` scope, or branch isn't in credential lineage |
 | 413 | Body exceeds 32 MiB |
@@ -283,6 +284,10 @@ The gateway speaks standard OpenAI Chat Completions. Common status codes:
 
 Full table: [chat completions reference](https://neon.com/docs/ai-gateway/chat-completions#error-handling).
 
+### Tool limit (128) on OpenAI models
+
+OpenAI models through the gateway accept at most 128 tools per request; the upstream rejects anything more with a 400 `Invalid 'tools': array too long` error (live-verified on `gpt-6-luna` at 129 tools; Gemini, Claude, Kimi, and GLM accept more). A pi session with many extensions and MCP servers can cross this limit, and subagent sessions inherit the full toolset. When it happens, the extension appends the remedy to the error: disable MCP servers or unused tools, or switch to a non-OpenAI model. Pi's `--exclude-tools` and `pi config` (disable an extension or MCP server) reduce the tool count.
+
 ## What the extension does
 
 The gateway accepts OpenAI Chat Completions but rejects different params per upstream model. The extension wraps `openAICompletionsApi` and:
@@ -290,6 +295,7 @@ The gateway accepts OpenAI Chat Completions but rejects different params per ups
 - Strips `$schema` markers from `tools[].function.parameters` and `response_format.json_schema.schema`
 - Removes unsupported OpenAI fields (`store`, `prompt_cache_key`, `prompt_cache_retention`)
 - Per-model cleanup of `frequency_penalty`, `presence_penalty`, `seed`, `stop`, `temperature`, `top_p`, `reasoning_effort`
+- Enriches the upstream 128-tool rejection with its remedy, and 429 account-quota errors with `Retry-After`
 - Translates GPT-OSS harmony `[{ type: "text" }, { type: "reasoning" }]` into flat `content` + `reasoning_content`
 - Unwraps Neon's `{ error: { message } }` envelope
 
