@@ -267,7 +267,8 @@ See [Neon's native thinking reference](https://neon.com/docs/ai-gateway/anthropi
 On chat completions, these models accept function tools only with `reasoning_effort: "none"`: gpt-5-4, gpt-5-4-mini, gpt-5-4-nano, gpt-5-5, gpt-5-6-luna, gpt-5-6-sol, gpt-5-6-terra, gpt-6-luna, and gpt-6-sol.
 The extension sets `none` automatically when tools are present; reasoning without tools keeps the requested effort.
 Function tools cannot work on chat for `gpt-6-1-sol` and `gpt-6-astra` (they reject `none` too); use `neon-responses` for tool-driven work with those models.
-gpt-oss models get `max_completion_tokens` renamed to `max_tokens`, which their upstream requires.
+GPT-OSS, Llama, Qwen, and Gemma models get `max_completion_tokens` renamed to `max_tokens`, which their upstream requires.
+Gemini 3/4, `gemma-3-12b`, and `qwen35-122b-a10b` receive `system` in place of pi's `developer` message role.
 
 ## Errors
 

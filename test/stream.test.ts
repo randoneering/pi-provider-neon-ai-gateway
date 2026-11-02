@@ -468,6 +468,82 @@ describe("transformNeonPayload", () => {
 		});
 	});
 
+	describe("max_completion_tokens rename", () => {
+		const maxBody = (model: string) =>
+			transformNeonPayload(withBase({ max_completion_tokens: 512 }), model) as Record<string, unknown>;
+
+		it.each([
+			"llama-4-maverick",
+			"meta-llama-3-1-8b-instruct",
+			"meta-llama-3-3-70b-instruct",
+			"gemma-3-12b",
+			"qwen3-next-80b-a3b-instruct",
+			"qwen35-122b-a10b",
+		])("renames max_completion_tokens to max_tokens for %s (upstream rejects the field)", (id) => {
+			const result = maxBody(id);
+			expect(result.max_tokens).toBe(512);
+			expect(result.max_completion_tokens).toBeUndefined();
+		});
+
+		it.each(["gpt-6-luna", "claude-sonnet-4-7", "gemini-3-6-flash"])(
+			"keeps max_completion_tokens for %s (upstream accepts it)",
+			(id) => {
+				const result = maxBody(id);
+				expect(result.max_completion_tokens).toBe(512);
+				expect(result.max_tokens).toBeUndefined();
+			},
+		);
+	});
+
+	describe("developer role mapping", () => {
+		const devMessages = () => [
+			{ role: "developer", content: "You are a coding assistant." },
+			{ role: "user", content: "hello" },
+		];
+
+		it.each([
+			"gemini-3-6-flash",
+			"gemini-4-argon",
+			"DATABRICKS-GEMINI-4-ARGON",
+			"gemma-3-12b",
+			"qwen35-122b-a10b",
+		])("maps developer to system for %s (upstream rejects developer)", (id) => {
+			const result = transformNeonPayload(withBase({ messages: devMessages() }), id) as {
+				messages: { role: string }[];
+			};
+			expect(result.messages[0]?.role).toBe("system");
+			expect(result.messages[1]?.role).toBe("user");
+		});
+
+		it.each(["gpt-6-luna", "claude-sonnet-4-7", "qwen3-next-80b-a3b-instruct"])(
+			"keeps the developer role for %s (upstream accepts it)",
+			(id) => {
+				const result = transformNeonPayload(withBase({ messages: devMessages() }), id) as {
+					messages: { role: string }[];
+				};
+				expect(result.messages[0]?.role).toBe("developer");
+			},
+		);
+
+		it("leaves user and assistant roles untouched for mapping models", () => {
+			const messages = [
+				{ role: "user", content: "hi" },
+				{ role: "assistant", content: "hello" },
+			];
+			const result = transformNeonPayload(withBase({ messages }), "gemini-3-6-flash") as {
+				messages: { role: string }[];
+			};
+			expect(result.messages.map((m) => m.role)).toEqual(["user", "assistant"]);
+		});
+
+		it("does not mutate the input messages", () => {
+			const original = devMessages();
+			const snapshot = JSON.stringify(original);
+			transformNeonPayload(withBase({ messages: original }), "gemini-3-6-flash");
+			expect(JSON.stringify(original)).toBe(snapshot);
+		});
+	});
+
 	it("does not mutate the input payload", () => {
 		const original = withBase({ temperature: 0.7, frequency_penalty: 0.5 });
 		const snapshot = JSON.stringify(original);

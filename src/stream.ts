@@ -126,6 +126,28 @@ function replayGeminiSignatures(messages: unknown): unknown {
 	});
 }
 
+// These chat upstreams reject developer messages but accept system messages.
+const DEVELOPER_ROLE_REJECTING_MODELS = new Set(["gemma-3-12b", "qwen35-122b-a10b"]);
+
+function needsDeveloperRoleMapping(id: string): boolean {
+	return /^gemini-[34]-/u.test(id) || DEVELOPER_ROLE_REJECTING_MODELS.has(id);
+}
+
+function mapDeveloperRoleToSystem(messages: unknown): unknown {
+	if (!Array.isArray(messages)) return messages;
+	return messages.map((message) =>
+		isRecord(message) && message.role === "developer" ? { ...message, role: "system" } : message,
+	);
+}
+
+// These upstream families use max_tokens instead of max_completion_tokens.
+function renameMaxCompletionTokens(payload: Record<string, unknown>): void {
+	if (payload.max_completion_tokens !== undefined) {
+		payload.max_tokens = payload.max_completion_tokens;
+		delete payload.max_completion_tokens;
+	}
+}
+
 /**
  * Strip the OpenAI fields a model's upstream rejects, keyed off the model id.
  */
@@ -137,6 +159,11 @@ export function transformNeonPayload(value: unknown, modelId: string): unknown {
 	removeKeys(payload, ["store", "prompt_cache_key", "prompt_cache_retention"]);
 
 	const id = canonicalModelId(modelId);
+
+	// pi can send its system prompt as a developer message.
+	if (needsDeveloperRoleMapping(id) && payload.messages !== undefined) {
+		payload.messages = mapDeveloperRoleToSystem(payload.messages);
+	}
 
 	// Upstream metadata layer: neon.com/models.json publishes the gateway
 	// contract per model. temperature === false means the model rejects
@@ -163,18 +190,13 @@ export function transformNeonPayload(value: unknown, modelId: string): unknown {
 		if (payload.messages !== undefined) payload.messages = replayGeminiSignatures(payload.messages);
 	} else if (id.includes("llama")) {
 		removeKeys(payload, ["frequency_penalty", "presence_penalty", "seed"]);
+		renameMaxCompletionTokens(payload);
 	} else if (id.includes("gpt-oss")) {
 		removeKeys(payload, ["frequency_penalty", "presence_penalty", "seed", "stop"]);
-		// The gpt-oss upstream rejects max_completion_tokens on every request
-		// with "json: unknown field \"max_completion_tokens\"" but accepts the
-		// legacy max_tokens name (live-verified for plain, tool, and thinking
-		// requests on gpt-oss-120b and gpt-oss-20b).
-		if (payload.max_completion_tokens !== undefined) {
-			payload.max_tokens = payload.max_completion_tokens;
-			delete payload.max_completion_tokens;
-		}
+		renameMaxCompletionTokens(payload);
 	} else if (id.includes("qwen") || id.includes("gemma")) {
 		removeKeys(payload, ["frequency_penalty", "presence_penalty", "seed"]);
+		renameMaxCompletionTokens(payload);
 	} else if (id.includes("glm") || id.includes("inkling") || id.includes("kimi")) {
 		removeKeys(payload, ["frequency_penalty", "presence_penalty"]);
 	} else if (TOOL_EFFORT_NONE_MODELS.has(id)) {
