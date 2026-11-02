@@ -29,6 +29,8 @@ All notable changes to `pi-provider-neon-ai-gateway` are documented here. Versio
 
 ### Fixed
 
+- Gemini 3/4, Gemma 3 12B, and Qwen 3.5 122B chat requests map `developer` messages to `system` for upstream compatibility.
+- Llama, Qwen, and Gemma chat requests use `max_tokens` in place of the upstream-rejected `max_completion_tokens`.
 - GPT-5.5 Pro cached input uses the standard $30 per million token rate for local cost estimates; OpenAI publishes no cached-input discount for this model.
 - Decision and embedding model types cannot enter the chat catalog, even when their family does not identify them as non-chat. Jev models no longer generate invalid chat entries with zero token limits.
 - Gemini 4 tool calls preserve thought signatures through saved history and normalize a final `stop` after tools to `tool_calls`. A live tool round trip reproduces the missing normalization before the fix and passes afterward.
