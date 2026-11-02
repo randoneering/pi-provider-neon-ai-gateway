@@ -180,7 +180,7 @@ const proFixture: UpstreamModel = {
 	temperature: false,
 	modalities: { input: ["text", "image", "pdf"] },
 	limit: { context: 1050000, output: 128000 },
-	cost: { input: 30, output: 180, cache_read: 0.175 },
+	cost: { input: 30, output: 180 },
 };
 
 // gpt-6-1-sol and gpt-6-astra keep their chat catalog entries but are also
@@ -238,7 +238,7 @@ describe("RESPONSES_MODELS", () => {
 		expect(codex).toContain('cost: { input: 1.75, output: 14, cacheRead: 0.175, cacheWrite: 0 },');
 		expect(codex).toContain("context: 400_000,");
 		const pro = responsesEntryBlock(source, "gpt-5-5-pro");
-		expect(pro).toContain('cost: { input: 30, output: 180, cacheRead: 0.175, cacheWrite: 0 },');
+		expect(pro).toContain('cost: { input: 30, output: 180, cacheRead: 30, cacheWrite: 0 },');
 		expect(pro).toContain("context: 1_050_000,");
 	});
 
