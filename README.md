@@ -81,6 +81,7 @@ A read-access key is enough for viewing. Changing the spending cap requires an o
 | `/neon-org use <id\|name>` | yes | Switch the active org, persist in `auth.json` |
 | `/neon-models` | no | List Neon chat models with input, output, and cache-read pricing |
 | `/neon-decide enable` / `disable` / `status` | no | Control the optional Jev decision tool; gateway credentials are required for calls |
+| `/neon-embed enable` / `disable` / `status` | no | Control the optional Neon embedding tool |
 | `/neon-limits` | no | Show the latest upstream rate-limit headers from 429 responses |
 
 ### `/neon-balance`
@@ -167,6 +168,17 @@ The active org is marked with `*` in the list output. The first time you run one
 
 Pick `neon/<model-id>` for chat completions, `neon-anthropic/<claude-id>` for native Claude, or `neon-responses/<gpt-id>` for the two Responses-only models.
 Run `pi --list-models` to see the catalog and `/neon-models` for pricing.
+
+### Embeddings (opt-in)
+
+The `neon_embed` tool generates vectors through [Neon's embeddings endpoint](https://neon.com/docs/ai-gateway/embeddings).
+It defaults to disabled; run `/neon-embed enable` to expose it and `/neon-embed disable` to hide it.
+The preference persists separately from gateway credentials.
+
+Pass `input` as text or an array of up to 150 nonempty strings, and optionally set `model` to `qwen3-embedding-0-6b` (default), `bge-large-en`, or `gte-large-en`.
+The tool returns complete vectors and input-token usage; large batches can consume substantial context.
+Neon bills each request, and embedding tool usage is not included in the extension's local spending totals or cap guard.
+`bge-large-en` silently drops input after 512 tokens, so split longer text before embedding.
 
 ### Decision models (opt-in)
 
