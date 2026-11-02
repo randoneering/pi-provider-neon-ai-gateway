@@ -6,6 +6,7 @@ All notable changes to `pi-provider-neon-ai-gateway` are documented here. Versio
 
 ### Added
 
+- Optional `neon_embed` tool and persistent `/neon-embed` controls for Neon's embedding models, with batched text input and input-token cost reporting.
 - The upstream 128-tool rejection on OpenAI models (`400 Invalid 'tools': array too long`) now carries an actionable remedy in the streamed error: disable MCP servers or unused tools, or switch to a non-OpenAI model. Verified against the live gateway on `gpt-6-luna` (129+ tools fails, 128 passes; Gemini, Claude, Kimi, and GLM accept more), documented in the README Errors section.
 - Optional `neon_decide` tool for Jev 1.14 and OpenJev on `/typesafe/v1/systemone`, with typed `noul`, `choice`, and `score` questions, structured answers, cancellation, and a 30-second timeout.
 - `/neon-decide enable`, `disable`, and `status` control the tool immediately and persist the preference across sessions. Decision support defaults to disabled so users can keep another decision integration such as `pi-jev`.
