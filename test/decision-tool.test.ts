@@ -29,8 +29,8 @@ function harness(): { tool: () => Tool; command: (action: string) => Promise<voi
 	};
 }
 
-async function execute(tool: Tool, args: unknown = input): Promise<Awaited<ReturnType<Tool["execute"]>>> {
-	return tool.execute("decision-call", args as Parameters<Tool["execute"]>[1], undefined, undefined, {} as Parameters<Tool["execute"]>[4]);
+async function execute(tool: Tool, args: unknown = input, cwd?: string): Promise<Awaited<ReturnType<Tool["execute"]>>> {
+	return tool.execute("decision-call", args as Parameters<Tool["execute"]>[1], undefined, undefined, { cwd } as Parameters<Tool["execute"]>[4]);
 }
 
 describe("optional neon_decide tool", () => {
@@ -79,6 +79,15 @@ describe("optional neon_decide tool", () => {
 		await harness().command("disable");
 		await expect(execute(stale)).rejects.toThrow(/disabled/);
 		expect(fetch).not.toHaveBeenCalled();
+	});
+
+	it("resolves image paths from the tool context working directory", async () => {
+		const app = harness();
+		await app.command("enable");
+		writeFileSync(join(dir, "photo.png"), Buffer.from("89504e470d0a1a0a01", "hex"));
+		await execute(app.tool(), { ...input, state: { photo: "image1" }, images: { image1: "photo.png" } }, dir);
+		const init = vi.mocked(fetch).mock.calls[0]![1];
+		expect(JSON.parse(String(init?.body)).assets.image1.format).toBe("png");
 	});
 
 	it("returns structured decisions and input-only usage with stored auth precedence", async () => {

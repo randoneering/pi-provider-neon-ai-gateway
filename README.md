@@ -182,7 +182,7 @@ Neon bills each request, and embedding tool usage is not included in the extensi
 
 ### Decision models (opt-in)
 
-The `neon_decide` tool uses [Neon's decision endpoint](https://neon.com/docs/ai-gateway/decisions) to classify, route, or score text and JSON.
+The `neon_decide` tool uses [Neon's decision endpoint](https://neon.com/docs/ai-gateway/decisions) to classify, route, or score text, JSON, and images.
 It defaults to **disabled**, so it does not compete with another decision tool such as `pi-jev`.
 
 ```text
@@ -221,13 +221,29 @@ Enable the tool, then ask pi to call `neon_decide` with arguments such as:
 Each question returns a probability (`noul`), an option with probabilities (`choice`), or a numeric level with probabilities (`score`).
 Choice and score questions need at least two options or levels.
 
+For images, map an asset ID to a local PNG or JPEG path in `images`.
+Put the same ID in `state` and refer to that state field in the question instructions:
+
+```json
+{
+  "state": { "photo": "img-1" },
+  "images": { "img-1": "./package.png" },
+  "questions": { "damaged": { "type": "noul", "instructions": "Is the package in `photo` damaged?" } }
+}
+```
+
+Relative paths resolve from the session working directory.
+The tool reads and sends file contents to Neon; images count as billed input tokens.
+Image files must total at most 24 MiB and the complete request must fit within 32 MiB.
+Jev 1.14 requires images at least 280 × 280 pixels; OpenJev accepts smaller images.
+
 | Model | Selection | Input price per million tokens |
 |---|---|---|
 | Jev 1.14 | Default, or `"model": "typesafeai-jev-1-14-0"` | $0.042 |
 | OpenJev (Qwen 3.5 4B) | `"model": "openjev-qwen35-4b"` | $0.042 |
 
 Calls reuse `/neon-login` credentials or `NEON_AI_GATEWAY_TOKEN` and `NEON_AI_GATEWAY_BASE_URL`.
-The tool sends only the supplied state and questions to `/typesafe/v1/systemone`, bills input tokens only, and reports usage in pi and local Neon spending totals.
+The tool sends supplied state, questions, and any images to `/typesafe/v1/systemone`, bills input tokens only, and reports usage in pi and local Neon spending totals.
 Requests support cancellation, time out after 30 seconds, and do not retry automatically.
 Decision models do not support chat or streaming and do not appear in the `/model` picker.
 

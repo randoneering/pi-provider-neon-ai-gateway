@@ -1,4 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { mkdtempSync, truncateSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { decisionUsage, requestNeonDecision, type DecisionResponse } from "../src/decisions.js";
 
 const params = {
@@ -33,6 +36,54 @@ function respond(value: unknown = reply, status = 200): ReturnType<typeof vi.fn<
 }
 
 describe("requestNeonDecision", () => {
+	it("encodes local PNG assets and opts Jev into images", async () => {
+		const directory = mkdtempSync(join(tmpdir(), "neon-decision-image-"));
+		const bytes = Buffer.from("89504e470d0a1a0a01020304", "hex");
+		writeFileSync(join(directory, "photo.png"), bytes);
+		const fake = respond();
+		await requestNeonDecision({ ...params, state: { photo: "img-1" }, images: { "img-1": "photo.png" } }, { processEnv: env, cwd: directory });
+		const init = fake.mock.calls[0]![1]!;
+		const body = JSON.parse(String(init.body));
+		expect(body.assets).toEqual({ "img-1": { type: "image", format: "png", data_base64: bytes.toString("base64") } });
+		expect(body.images).toBeUndefined();
+		expect(new Headers(init.headers).get("TypeSafe-Danger-Zone-Images")).toBe("true");
+	});
+
+	it("encodes JPEG assets for OpenJev without the Jev image header", async () => {
+		const directory = mkdtempSync(join(tmpdir(), "neon-decision-image-"));
+		const bytes = Buffer.from("ffd8ff010203", "hex");
+		const file = join(directory, "photo.jpg");
+		writeFileSync(file, bytes);
+		const fake = respond();
+		await requestNeonDecision({ ...params, state: { photo: "photo" }, images: { photo: file }, model: "openjev-qwen35-4b" }, { processEnv: env, cwd: directory });
+		const init = fake.mock.calls[0]![1]!;
+		expect(JSON.parse(String(init.body)).assets.photo).toEqual({ type: "image", format: "jpeg", data_base64: bytes.toString("base64") });
+		expect(new Headers(init.headers).has("TypeSafe-Danger-Zone-Images")).toBe(false);
+	});
+
+	it("rejects oversized image files before network access", async () => {
+		const directory = mkdtempSync(join(tmpdir(), "neon-decision-image-"));
+		const file = join(directory, "large.png");
+		writeFileSync(file, "");
+		truncateSync(file, 24 * 1024 * 1024 + 1);
+		const fake = respond();
+		await expect(requestNeonDecision({ ...params, images: { photo: file } }, { processEnv: env })).rejects.toThrow(/24 MiB/);
+		expect(fake).not.toHaveBeenCalled();
+	});
+
+	it("checks cancellation before opening local images", async () => {
+		const fake = respond();
+		await expect(requestNeonDecision({ ...params, images: { photo: "/missing/image.png" } }, { processEnv: env, signal: AbortSignal.abort() })).rejects.toThrow(/cancel/i);
+		expect(fake).not.toHaveBeenCalled();
+	});
+
+	it("rejects non-image files before network access", async () => {
+		const directory = mkdtempSync(join(tmpdir(), "neon-decision-image-"));
+		writeFileSync(join(directory, "fake.png"), "not an image");
+		const fake = respond();
+		await expect(requestNeonDecision({ ...params, images: { photo: "fake.png" } }, { processEnv: env, cwd: directory })).rejects.toThrow(/PNG|JPEG/i);
+		expect(fake).not.toHaveBeenCalled();
+	});
 	it("posts the documented non-streaming payload with stored credentials and no redirects", async () => {
 		const fake = respond();
 		const result = await requestNeonDecision(params, {
