@@ -1,3 +1,5 @@
+import { open } from "node:fs/promises";
+import { resolve } from "node:path";
 import { Type, type Static, type Usage } from "@earendil-works/pi-ai";
 import { validateGatewayToken } from "./auth.js";
 import { NEON_AI_GATEWAY_TOKEN_ENV, resolveNeonDecisionBaseUrl } from "./config.js";
@@ -18,6 +20,7 @@ export const decisionParameters = Type.Object({
 	state: Type.Union([Type.String(), Type.Record(Type.String(), Type.Unknown())], { description: "Text or JSON object to classify, route, or score. Sent to Neon AI Gateway." }),
 	questions: Type.Record(Type.String(), question, { minProperties: 1, description: "Named yes/no (noul), choice, or score questions." }),
 	model: Type.Optional(Type.String({ description: "typesafeai-jev-1-14-0 (default) or openjev-qwen35-4b" })),
+	images: Type.Optional(Type.Record(Type.String({ minLength: 1 }), Type.String({ minLength: 1 }), { description: "Asset IDs mapped to local PNG or JPEG paths; image contents are sent to Neon." })),
 }, { additionalProperties: false });
 
 export type DecisionParameters = Static<typeof decisionParameters>;
@@ -45,6 +48,7 @@ export interface DecisionRequestOptions {
 	credential?: DecisionCredential;
 	processEnv?: Record<string, string | undefined>;
 	signal?: AbortSignal;
+	cwd?: string;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -71,13 +75,16 @@ export function decisionModelId(id = "typesafeai-jev-1-14-0"): string {
 }
 
 function validateParameters(value: unknown): asserts value is DecisionParameters {
-	if (!isRecord(value) || Object.keys(value).some((key) => !["state", "questions", "model"].includes(key))) {
-		throw new Error("Neon decision arguments must contain only state, questions, and optional model.");
+	if (!isRecord(value) || Object.keys(value).some((key) => !["state", "questions", "model", "images"].includes(key))) {
+		throw new Error("Neon decision arguments must contain only state, questions, optional model, and images.");
 	}
 	if (!(typeof value.state === "string" || isRecord(value.state)) || !isJson(value.state)) {
 		throw new Error("Neon decision state must be text or a JSON object with finite numbers.");
 	}
 	if (value.model !== undefined && typeof value.model !== "string") throw new Error("Neon decision model must be a string.");
+	if (value.images !== undefined && (!isRecord(value.images) || Object.entries(value.images).some(([id, path]) => !nonempty(id) || !nonempty(path)))) {
+		throw new Error("Neon decision images must map nonempty asset IDs to local paths.");
+	}
 	if (!isRecord(value.questions) || Object.keys(value.questions).length === 0) {
 		throw new Error("Neon decision questions must contain at least one named question.");
 	}
@@ -149,6 +156,36 @@ function httpError(status: number): Error {
 	return new Error(`Neon decision request failed (HTTP ${status}). ${hint}`);
 }
 
+const MAX_IMAGE_BYTES = 24 * 1024 * 1024;
+
+async function readImageAssets(images: Record<string, string>, cwd: string): Promise<Record<string, { type: string; format: string; data_base64: string }>> {
+	const assets: [string, { type: string; format: string; data_base64: string }][] = [];
+	let remaining = MAX_IMAGE_BYTES;
+	for (const [id, path] of Object.entries(images)) {
+		let file;
+		try { file = await open(resolve(cwd, path), "r"); }
+		catch { throw new Error(`Cannot open decision image for asset ${JSON.stringify(id)}. Check the file path and permissions.`); }
+		try {
+			const stat = await file.stat();
+			if (!stat.isFile() || stat.size > remaining) throw new Error("Decision images must be regular files totaling at most 24 MiB.");
+			const bytes = Buffer.alloc(stat.size + 1);
+			let offset = 0;
+			while (offset < bytes.length) {
+				const result = await file.read(bytes, offset, bytes.length - offset, offset);
+				if (result.bytesRead === 0) break;
+				offset += result.bytesRead;
+			}
+			if (offset !== stat.size) throw new Error("Decision image changed while reading. Retry the request.");
+			const png = bytes.subarray(0, 8).equals(Buffer.from("89504e470d0a1a0a", "hex"));
+			const jpeg = bytes.length >= 4 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+			if (!png && !jpeg) throw new Error("Decision images must be PNG or JPEG files.");
+			remaining -= stat.size;
+			assets.push([id, { type: "image", format: png ? "png" : "jpeg", data_base64: bytes.subarray(0, offset).toString("base64") }]);
+		} finally { await file.close(); }
+	}
+	return Object.fromEntries(assets);
+}
+
 export async function requestNeonDecision(value: unknown, options: DecisionRequestOptions = {}): Promise<DecisionResponse> {
 	validateParameters(value);
 	const model = decisionModelId(value.model);
@@ -159,7 +196,10 @@ export async function requestNeonDecision(value: unknown, options: DecisionReque
 	validateGatewayToken(token);
 	const baseUrl = resolveNeonDecisionBaseUrl({ processEnv: env, credentialEnv: options.credential?.env });
 	if (!baseUrl) throw new Error("Neon decisions need a base URL. Run /neon-login or set NEON_AI_GATEWAY_BASE_URL.");
-	const body = JSON.stringify({ ...value, model });
+	if (options.signal?.aborted) throw new Error("Neon decision request cancelled.");
+	const { images, ...parameters } = value;
+	const assets = images && Object.keys(images).length > 0 ? await readImageAssets(images, options.cwd ?? process.cwd()) : undefined;
+	const body = JSON.stringify({ ...parameters, model, ...(assets ? { assets } : {}) });
 	if (Buffer.byteLength(body) > 32 * 1024 * 1024) throw new Error("Neon decision request exceeds the 32 MiB body limit. Reduce state or questions.");
 	const timeout = AbortSignal.timeout(30_000);
 	const signal = options.signal ? AbortSignal.any([options.signal, timeout]) : timeout;
@@ -169,7 +209,7 @@ export async function requestNeonDecision(value: unknown, options: DecisionReque
 		signal.throwIfAborted();
 		response = await fetch(`${baseUrl}/systemone`, {
 			method: "POST", redirect: "error", signal,
-			headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body,
+			headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...(assets && model === "typesafeai-jev-1-14-0" ? { "TypeSafe-Danger-Zone-Images": "true" } : {}) }, body,
 		});
 		if (response.ok) {
 			try { payload = await response.json(); }

@@ -58,16 +58,16 @@ export function registerNeonDecisionTool(pi: ExtensionAPI): void {
 		pi.registerTool(defineTool({
 			name: "neon_decide",
 			label: "Neon decision",
-			description: "Classify, route, or score text or JSON with Jev 1.14 or OpenJev through Neon AI Gateway. Ask named noul (yes/no), choice, or score questions and receive probabilities. Sends the supplied state to Neon and bills input tokens. Does not generate text or execute actions.",
+			description: "Classify, route, or score text, JSON, or local PNG/JPEG images with Jev 1.14 or OpenJev through Neon AI Gateway. Ask named noul, choice, or score questions and receive probabilities. Sends supplied state and images to Neon and bills input tokens.",
 			parameters: decisionParameters,
 			outputSchema: decisionOutput,
 			exposure: enabled ? "direct" : "hidden",
 			defaultActive: enabled,
 			annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
-			async execute(_toolCallId, params, signal) {
+			async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 				// Hidden declarations alone cannot protect calls queued before disabling.
 				if (!readDecisionEnabled()) throw new Error("Neon decisions are disabled. Run /neon-decide enable to use this tool.");
-				const result = await requestNeonDecision(params, { credential: readNeonDecisionCredential(), signal });
+				const result = await requestNeonDecision(params, { credential: readNeonDecisionCredential(), signal, cwd: ctx.cwd });
 				const text = JSON.stringify(result);
 				return {
 					content: [{ type: "text", text: text.length <= 32_000 ? text : `${text.slice(0, 32_000)}\n[Decision result truncated. Ask fewer questions for the full text.]` }],
