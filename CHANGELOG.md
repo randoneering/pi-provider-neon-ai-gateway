@@ -31,6 +31,7 @@ All notable changes to `pi-provider-neon-ai-gateway` are documented here. Versio
 
 ### Fixed
 
+- Generated chat, Anthropic, and Responses model costs include Neon's published long-context tiers for pi's usage estimates.
 - Gemini 3/4, Gemma 3 12B, and Qwen 3.5 122B chat requests map `developer` messages to `system` for upstream compatibility.
 - Llama, Qwen, and Gemma chat requests use `max_tokens` in place of the upstream-rejected `max_completion_tokens`.
 - GPT-5.5 Pro cached input uses the standard $30 per million token rate for local cost estimates; OpenAI publishes no cached-input discount for this model.

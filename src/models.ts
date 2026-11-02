@@ -3,7 +3,8 @@
 //
 // Costs are USD per million tokens. Chat cache prices come from the
 // upstream cache_read/cache_write keys and default to 0 when omitted.
-// Responses model prices are maintained in scripts/update-models.ts.
+// Responses base prices are maintained in scripts/update-models.ts.
+// Context tiers come from the upstream catalog.
 
 import type { Model, ThinkingLevelMap } from "@earendil-works/pi-ai";
 
@@ -18,7 +19,7 @@ interface NeonModelInput {
 	input: ("text" | "image")[];
 	context: number;
 	output: number;
-	cost: { input: number; output: number; cacheRead: number; cacheWrite: number };
+	cost: Model<Api>["cost"];
 }
 
 interface CommonModelInput {
@@ -27,7 +28,7 @@ interface CommonModelInput {
 	baseUrl: string;
 	reasoning: boolean;
 	input: ("text" | "image")[];
-	cost: { input: number; output: number; cacheRead: number; cacheWrite: number };
+	cost: Model<Api>["cost"];
 	contextWindow: number;
 	maxTokens: number;
 }
@@ -101,7 +102,7 @@ export const NEON_MODELS: Model<"openai-completions">[] = [
 		input: ["text", "image"],
 		context: 200_000,
 		output: 64_000,
-		cost: { input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite: 0.125 },
+		cost: { input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite: 0.125, tiers: [{ inputTokensAbove: 100000, input: 0.5, output: 2.5, cacheRead: 0.05, cacheWrite: 0.625 }] },
 	}),
 	m({
 		id: "claude-opus-4-1",
@@ -227,7 +228,7 @@ export const NEON_MODELS: Model<"openai-completions">[] = [
 		input: ["text", "image"],
 		context: 1_048_576,
 		output: 65_536,
-		cost: { input: 2, output: 12, cacheRead: 0.2, cacheWrite: 0 },
+		cost: { input: 2, output: 12, cacheRead: 0.2, cacheWrite: 0, tiers: [{ inputTokensAbove: 200000, input: 4, output: 18, cacheRead: 0.4, cacheWrite: 0 }] },
 	}),
 	m({
 		id: "gemini-3-5-flash",
@@ -362,7 +363,7 @@ export const NEON_MODELS: Model<"openai-completions">[] = [
 		input: ["text", "image"],
 		context: 1_050_000,
 		output: 128_000,
-		cost: { input: 2.5, output: 15, cacheRead: 0.25, cacheWrite: 0 },
+		cost: { input: 2.5, output: 15, cacheRead: 0.25, cacheWrite: 0, tiers: [{ inputTokensAbove: 272000, input: 5, output: 22.5, cacheRead: 0.5, cacheWrite: 0 }] },
 	}),
 	m({
 		id: "gpt-5-4-mini",
@@ -389,7 +390,7 @@ export const NEON_MODELS: Model<"openai-completions">[] = [
 		input: ["text", "image"],
 		context: 1_050_000,
 		output: 128_000,
-		cost: { input: 5, output: 30, cacheRead: 0.5, cacheWrite: 0 },
+		cost: { input: 5, output: 30, cacheRead: 0.5, cacheWrite: 0, tiers: [{ inputTokensAbove: 272000, input: 10, output: 45, cacheRead: 1, cacheWrite: 0 }] },
 	}),
 	m({
 		id: "gpt-5-6-luna",
@@ -398,7 +399,7 @@ export const NEON_MODELS: Model<"openai-completions">[] = [
 		input: ["text", "image"],
 		context: 1_050_000,
 		output: 128_000,
-		cost: { input: 0.2, output: 1.2, cacheRead: 0.02, cacheWrite: 0.25 },
+		cost: { input: 0.2, output: 1.2, cacheRead: 0.02, cacheWrite: 0.25, tiers: [{ inputTokensAbove: 272000, input: 0.4, output: 1.8, cacheRead: 0.04, cacheWrite: 0.5 }] },
 	}),
 	m({
 		id: "gpt-5-6-sol",
@@ -407,7 +408,7 @@ export const NEON_MODELS: Model<"openai-completions">[] = [
 		input: ["text", "image"],
 		context: 1_050_000,
 		output: 128_000,
-		cost: { input: 5, output: 30, cacheRead: 0.5, cacheWrite: 6.25 },
+		cost: { input: 5, output: 30, cacheRead: 0.5, cacheWrite: 6.25, tiers: [{ inputTokensAbove: 272000, input: 10, output: 45, cacheRead: 1, cacheWrite: 12.5 }] },
 	}),
 	m({
 		id: "gpt-5-6-terra",
@@ -416,7 +417,7 @@ export const NEON_MODELS: Model<"openai-completions">[] = [
 		input: ["text", "image"],
 		context: 1_050_000,
 		output: 128_000,
-		cost: { input: 2, output: 12, cacheRead: 0.2, cacheWrite: 2.5 },
+		cost: { input: 2, output: 12, cacheRead: 0.2, cacheWrite: 2.5, tiers: [{ inputTokensAbove: 272000, input: 4, output: 18, cacheRead: 0.4, cacheWrite: 5 }] },
 	}),
 	m({
 		id: "gpt-5-mini",
@@ -443,7 +444,7 @@ export const NEON_MODELS: Model<"openai-completions">[] = [
 		input: ["text", "image"],
 		context: 1_050_000,
 		output: 128_000,
-		cost: { input: 2, output: 10, cacheRead: 0.1, cacheWrite: 2.5 },
+		cost: { input: 2, output: 10, cacheRead: 0.1, cacheWrite: 2.5, tiers: [{ inputTokensAbove: 272000, input: 4, output: 15, cacheRead: 0.2, cacheWrite: 5 }] },
 	}),
 	m({
 		id: "gpt-6-astra",
@@ -452,7 +453,7 @@ export const NEON_MODELS: Model<"openai-completions">[] = [
 		input: ["text", "image"],
 		context: 1_050_000,
 		output: 128_000,
-		cost: { input: 10, output: 50, cacheRead: 1, cacheWrite: 12.5 },
+		cost: { input: 10, output: 50, cacheRead: 1, cacheWrite: 12.5, tiers: [{ inputTokensAbove: 272000, input: 20, output: 75, cacheRead: 2, cacheWrite: 25 }] },
 	}),
 	m({
 		id: "gpt-6-luna",
@@ -461,7 +462,7 @@ export const NEON_MODELS: Model<"openai-completions">[] = [
 		input: ["text", "image"],
 		context: 1_050_000,
 		output: 128_000,
-		cost: { input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite: 0.125 },
+		cost: { input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite: 0.125, tiers: [{ inputTokensAbove: 272000, input: 0.2, output: 0.75, cacheRead: 0.02, cacheWrite: 0.25 }] },
 	}),
 	m({
 		id: "gpt-6-sol",
@@ -470,7 +471,7 @@ export const NEON_MODELS: Model<"openai-completions">[] = [
 		input: ["text", "image"],
 		context: 1_050_000,
 		output: 128_000,
-		cost: { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 },
+		cost: { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5, tiers: [{ inputTokensAbove: 272000, input: 4, output: 15, cacheRead: 0.4, cacheWrite: 5 }] },
 	}),
 	m({
 		id: "gpt-oss-120b",
@@ -717,7 +718,7 @@ export const ANTHROPIC_MODELS: Model<AnthropicApi>[] = [
 		input: ["text", "image"],
 		context: 200_000,
 		output: 64_000,
-		cost: { input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite: 0.125 },
+		cost: { input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite: 0.125, tiers: [{ inputTokensAbove: 100000, input: 0.5, output: 2.5, cacheRead: 0.05, cacheWrite: 0.625 }] },
 	}),
 	mAnthropic({
 		id: "claude-opus-4-1",
@@ -856,7 +857,7 @@ export const RESPONSES_MODELS: Model<ResponsesApi>[] = [
 		input: ["text", "image"],
 		context: 1_050_000,
 		output: 128_000,
-		cost: { input: 30, output: 180, cacheRead: 30, cacheWrite: 0 },
+		cost: { input: 30, output: 180, cacheRead: 30, cacheWrite: 0, tiers: [{ inputTokensAbove: 272000, input: 60, output: 270, cacheRead: 60, cacheWrite: 0 }] },
 		thinkingLevelMap: {
 			off: "medium",
 			minimal: "medium",
@@ -874,7 +875,7 @@ export const RESPONSES_MODELS: Model<ResponsesApi>[] = [
 		input: ["text", "image"],
 		context: 1_050_000,
 		output: 128_000,
-		cost: { input: 2, output: 10, cacheRead: 0.1, cacheWrite: 2.5 },
+		cost: { input: 2, output: 10, cacheRead: 0.1, cacheWrite: 2.5, tiers: [{ inputTokensAbove: 272000, input: 4, output: 15, cacheRead: 0.2, cacheWrite: 5 }] },
 		thinkingLevelMap: {
 			off: "low",
 			minimal: "low",
@@ -892,7 +893,7 @@ export const RESPONSES_MODELS: Model<ResponsesApi>[] = [
 		input: ["text", "image"],
 		context: 1_050_000,
 		output: 128_000,
-		cost: { input: 10, output: 50, cacheRead: 1, cacheWrite: 12.5 },
+		cost: { input: 10, output: 50, cacheRead: 1, cacheWrite: 12.5, tiers: [{ inputTokensAbove: 272000, input: 20, output: 75, cacheRead: 2, cacheWrite: 25 }] },
 		thinkingLevelMap: {
 			off: "low",
 			minimal: "low",
