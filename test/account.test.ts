@@ -118,6 +118,23 @@ describe("aggregateLocalSpend", () => {
 		expect(result.firstTimestamp).toBe(500);
 	});
 
+	it("includes successful embedding usage and ignores failed or unrelated tool results", async () => {
+		const sessions = join(tempDir, "sessions");
+		mkdirSync(sessions, { recursive: true });
+		const tool = { role: "toolResult", toolName: "neon_embed", toolCallId: "embedding-1", content: [], isError: false,
+			usage: sampleUsage(0.02).usage, timestamp: 300 };
+		writeFileSync(join(sessions, "embeddings.jsonl"), [
+			{ type: "message", message: tool },
+			{ type: "message", message: { ...tool, isError: true, provider: "neon", usage: sampleUsage(99).usage } },
+			{ type: "message", message: { ...tool, toolName: "neon_embed_extra", usage: sampleUsage(99).usage } },
+			{ type: "message", message: { ...tool, role: "user", usage: sampleUsage(99).usage } },
+		].map((line) => JSON.stringify(line)).join("\n"));
+		const result = await accountModule.aggregateLocalSpend(tempDir);
+		expect(result.totalCost).toBeCloseTo(0.02);
+		expect(result.sessionCount).toBe(1);
+		expect(result.firstTimestamp).toBe(300);
+	});
+
 	it("walks nested session directories", async () => {
 		const a = join(tempDir, "sessions", "proj-a");
 		const b = join(tempDir, "sessions", "proj-a", "sub");

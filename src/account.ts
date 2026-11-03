@@ -47,8 +47,8 @@ export interface StoredNeonCredential {
 
 /**
  * Walk ~/.pi/agent/sessions/ recursively and sum the `usage.cost.total` of
- * every assistant message whose provider is the Neon AI Gateway. Skips
- * aborted messages (zero cost) and malformed JSONL lines.
+ * Neon provider messages and successful decision and embedding tool results.
+ * Skips zero-cost messages and malformed JSONL lines.
  *
  * Exported for direct testing. Returns zeros when the sessions dir does
  * not exist (first run).
@@ -126,8 +126,9 @@ function extractNeonCost(value: unknown): NeonCostSample | undefined {
 	if (value.type !== "message") return undefined;
 	const message = value.message;
 	if (!isRecord(message)) return undefined;
-	const decision = message.role === "toolResult" && message.toolName === "neon_decide" && message.isError !== true;
-	if (!decision && message.provider !== PROVIDER_ID && message.provider !== ANTHROPIC_PROVIDER_ID && message.provider !== RESPONSES_PROVIDER_ID) {
+	if (message.role === "toolResult") {
+		if (message.isError === true || (message.toolName !== "neon_decide" && message.toolName !== "neon_embed")) return undefined;
+	} else if (message.provider !== PROVIDER_ID && message.provider !== ANTHROPIC_PROVIDER_ID && message.provider !== RESPONSES_PROVIDER_ID) {
 		return undefined;
 	}
 	const usage = message.usage;

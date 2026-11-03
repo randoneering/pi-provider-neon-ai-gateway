@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setAgentDir, unsetAgentDir } from "./helpers/agent-dir.js";
 import { registerNeonEmbeddingTool } from "../src/embedding-tool.js";
+import { aggregateLocalSpend } from "../src/account.js";
 import registerExtension from "../src/index.js";
 
 type Tool = Parameters<ExtensionAPI["registerTool"]>[0];
@@ -48,6 +49,17 @@ describe("optional neon_embed tool", () => {
 		expect(JSON.parse(readFileSync(join(dir, "neon-embeddings.json"), "utf8"))).toEqual({ enabled: true });
 		const stale = app.tool(); await harness().command("disable"); await expect(execute(stale)).rejects.toThrow(/disabled/i);
 	});
+	it("counts the tool's reported usage when recorded in a session", async () => {
+		const app = harness();
+		await app.command("enable");
+		const result = await execute(app.tool());
+		mkdirSync(join(dir, "sessions"));
+		writeFileSync(join(dir, "sessions", "embedding.jsonl"), JSON.stringify({
+			type: "message", message: { role: "toolResult", toolName: "neon_embed", isError: false, usage: result.usage },
+		}));
+		expect((await aggregateLocalSpend(dir)).totalCost).toBeCloseTo(0.000002, 9);
+	});
+
 	it("returns complete vectors and input-only usage when enabled", async () => {
 		const app = harness(); await app.command("enable"); const result = await execute(app.tool());
 		expect(result.content[0]).toMatchObject({ type: "text", text: expect.stringContaining("0.1") });
