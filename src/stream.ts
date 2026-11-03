@@ -633,8 +633,7 @@ export function streamNeonAnthropic(
 
 /**
  * Stream adapter for the `/openai/v1/responses` endpoint, exposed on the
- * `neon-responses` provider (gpt-5-3-codex, gpt-5-5-pro, gpt-6-1-sol,
- * gpt-6-astra).
+ * `neon-responses` provider.
  *
  * Reuses pi-ai's native OpenAI Responses parsing, with two Neon-specific
  * adjustments:

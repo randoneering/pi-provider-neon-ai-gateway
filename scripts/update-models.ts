@@ -67,7 +67,7 @@ interface NeonModelInput {
  * (https://neon.com/docs/ai-gateway/openai-responses). Live checks extended
  * it with "max" for gpt-6-1-sol and gpt-6-astra.
  */
-const RESPONSES_EFFORT_LADDER = ["none", "low", "medium", "high", "xhigh", "max"] as const;
+const RESPONSES_EFFORT_LADDER = ["none", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 
 /**
  * pi thinking levels (ModelThinkingLevel in @earendil-works/pi-ai:
@@ -79,12 +79,12 @@ const RESPONSES_EFFORT_LADDER = ["none", "low", "medium", "high", "xhigh", "max"
 const PI_LEVEL_EFFORT_TARGET: Record<string, number> = {
 	off: 0,
 	minimal: 1,
-	low: 1,
-	medium: 2,
-	high: 3,
-	xhigh: 4,
+	low: 2,
+	medium: 3,
+	high: 4,
+	xhigh: 5,
 	// Ladders that top out at xhigh fall back to the highest effort.
-	max: 5,
+	max: 6,
 };
 
 interface ResponsesModelSpec {
@@ -107,14 +107,26 @@ interface ResponsesModelSpec {
 }
 
 /**
- * Catalog for the `neon-responses` provider. gpt-5-3-codex and gpt-5-5-pro
- * are Responses-only; gpt-6-1-sol and gpt-6-astra reject "none" on chat so
- * function tools cannot work there, but they do full echo-tool round trips
- * with reasoning low on /openai/v1/responses (live-verified), so they are
- * exposed on both providers (text-only use keeps working on chat). Effort
- * values and metadata are reconciled against https://neon.com/models.json
- * at generation time.
+ * Responses-only models and shared models that need explicit fallback metadata.
+ * Other shared models derive their metadata from https://neon.com/models.json.
+ * GPT-6.1 Sol and GPT-6 Astra need Responses for tool-driven use.
  */
+// Shared models with a live-verified Responses tool round trip.
+const SHARED_RESPONSES_EFFORTS: Record<string, readonly string[]> = {
+	"gpt-5": ["minimal", "low", "medium", "high"],
+	"gpt-5-mini": ["minimal", "low", "medium", "high"],
+	"gpt-5-nano": ["minimal", "low", "medium", "high"],
+	"gpt-5-1": ["none", "low", "medium", "high"],
+	"gpt-5-2": ["none", "low", "medium", "high", "xhigh"],
+	"gpt-5-4": ["none", "low", "medium", "high", "xhigh"],
+	"gpt-5-4-mini": ["none", "low", "medium", "high", "xhigh"],
+	"gpt-5-4-nano": ["none", "low", "medium", "high", "xhigh"],
+	"gpt-5-5": ["none", "low", "medium", "high", "xhigh"],
+	"gpt-5-6-luna": ["none", "low", "medium", "high", "xhigh", "max"],
+	"gpt-5-6-sol": ["none", "low", "medium", "high", "xhigh", "max"],
+	"gpt-5-6-terra": ["none", "low", "medium", "high", "xhigh", "max"],
+};
+
 const RESPONSES_MODEL_SPECS: ResponsesModelSpec[] = [
 	{
 		id: "gpt-5-3-codex",
@@ -376,6 +388,19 @@ export function buildModelsSource(models: UpstreamModel[]): string {
 		});
 		return { spec: { ...spec, cost: { ...spec.cost, ...(upstream ? tierCost(upstream) : {}) } }, thinkingLevelMap: thinkingLevelMapFor(resolveResponsesEfforts(spec, models)) };
 	});
+	for (const model of [...models].sort((a, b) => a.id.localeCompare(b.id))) {
+		const id = model.id.toLowerCase();
+		const efforts = SHARED_RESPONSES_EFFORTS[id];
+		if (!efforts || !isReleased(model)) continue;
+		const entry = toNeonModelInput(model);
+		const spec: ResponsesModelSpec = {
+			...entry,
+			temperature: model.temperature === true,
+			toolCall: model.tool_call === true,
+			efforts,
+		};
+		responses.push({ spec, thinkingLevelMap: thinkingLevelMapFor(resolveResponsesEfforts(spec, models)) });
+	}
 	const capEntries = Array.from(capabilities.entries())
 		.sort(([a], [b]) => a.localeCompare(b))
 		.map(([id, cap]) => capabilityLine(id, cap.temperature, cap.toolCall))
@@ -509,9 +534,9 @@ ${anthropicEntries.map(entrySourceAnthropic).join("\n")}
  * Responses-endpoint catalog for the \`/openai/v1/responses\` endpoint,
  * exposed on the \`neon-responses\` provider. Hardcoded in
  * scripts/update-models.ts: gpt-5-3-codex and gpt-5-5-pro are Responses-only,
- * while gpt-6-1-sol and gpt-6-astra keep their chat catalog entries for
- * text-only use. Reconciled with the upstream reasoning_options at
- * generation time. thinkingLevelMap maps pi thinking levels onto upstream
+ * while shared chat models also support Responses. Effort values are
+ * reconciled with upstream reasoning_options at generation time.
+ * thinkingLevelMap maps pi thinking levels onto upstream
  * effort values, clamping when a level is unsupported so the gateway never
  * sees a rejected effort (e.g. "none" for gpt-5-5-pro).
  */

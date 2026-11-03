@@ -177,7 +177,7 @@ describe("neon-responses routing", () => {
 	});
 
 	it("rejects chat-only models on the neon-responses provider", () => {
-		expect(() => selectSmokeModel(parseSmokeArgs(["gpt-5-mini", "--provider=neon-responses"]))).toThrow(/not available/);
+		expect(() => selectSmokeModel(parseSmokeArgs(["gemini-3-6-flash", "--provider=neon-responses"]))).toThrow(/not available/);
 	});
 
 	it("keeps the Responses-capable chat models on the chat provider by default", () => {
@@ -189,7 +189,7 @@ describe("neon-responses routing", () => {
 	});
 
 	it("accepts --provider neon-responses for the Responses-capable chat models", () => {
-		for (const id of ["gpt-6-1-sol", "gpt-6-astra"]) {
+		for (const id of ["gpt-5", "gpt-5-mini", "gpt-5-nano", "gpt-5-1", "gpt-5-2", "gpt-5-4", "gpt-5-4-mini", "gpt-5-4-nano", "gpt-5-5", "gpt-5-6-luna", "gpt-5-6-sol", "gpt-5-6-terra", "gpt-6-1-sol", "gpt-6-astra"]) {
 			const model = selectSmokeModel(parseSmokeArgs([id, "--provider=neon-responses"]));
 			expect(model.provider, id).toBe("neon-responses");
 			expect(model.api, id).toBe("openai-responses");

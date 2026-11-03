@@ -164,6 +164,15 @@ describe("streamNeonResponses", () => {
 		expect(reasoning?.effort).toBe("medium");
 	});
 
+	it.each([undefined, "minimal", "low"] as const)("sends supported GPT-5 reasoning effort for %s", async (level) => {
+		const model = RESPONSES_MODELS.find((entry) => entry.id === "gpt-5")!;
+		const { fetch, requests } = captureFetch([() => responsesTextResponse(TEXT)]);
+		const { done, error } = await collect(streamNeonResponses(model, userContext(), optionsWith(fetch, { reasoning: level })));
+		expect(error).toBeUndefined();
+		expect(done?.stopReason).toBe("stop");
+		expect(requests[0]?.body.reasoning).toMatchObject({ effort: level === "low" ? "low" : "minimal" });
+	});
+
 	it("surfaces a 400 flat gateway error body as a stream error", async () => {
 		const { fetch } = captureFetch([() => new Response(JSON.stringify({
 			error_code: "BAD_REQUEST", message: "fake gateway rejection",
