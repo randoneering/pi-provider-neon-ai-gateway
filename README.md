@@ -87,7 +87,7 @@ A read-access key is enough for viewing. Changing the spending cap requires an o
 
 ### `/neon-balance`
 
-Fetches the real prepaid credit balance from `/organizations/{org_id}/billing/aigw_credits/balance` and the spending cap from `/organizations/{org_id}/billing/spending_limit`. Local spend is aggregated from the session JSONL files under `~/.pi/agent/sessions/` for `neon`, `neon-anthropic`, `neon-responses`, and successful `neon_decide` tool calls.
+Fetches the real prepaid credit balance from `/organizations/{org_id}/billing/aigw_credits/balance` and the spending cap from `/organizations/{org_id}/billing/spending_limit`. Local spend is aggregated from the session JSONL files under `~/.pi/agent/sessions/` for `neon`, `neon-anthropic`, `neon-responses`, and successful `neon_decide` and `neon_embed` tool calls.
 Alerts, footer percentages, and the opt-in cap guard use that same combined local spend.
 
 ```text
@@ -184,7 +184,7 @@ The preference persists separately from gateway credentials.
 
 Pass `input` as text or an array of up to 150 nonempty strings, and optionally set `model` to `qwen3-embedding-0-6b` (default), `bge-large-en`, or `gte-large-en`.
 The tool returns complete vectors and input-token usage; large batches can consume substantial context.
-Neon bills each request, and embedding tool usage is not included in the extension's local spending totals or cap guard.
+Neon bills each request, and recorded embedding usage contributes to local spending totals, alerts, and the opt-in cap guard.
 `bge-large-en` silently drops input after 512 tokens, so split longer text before embedding.
 
 ### Decision models (opt-in)

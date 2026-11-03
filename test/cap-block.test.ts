@@ -82,6 +82,18 @@ describe("cap block guard", () => {
 		expect(result.message.content).toContain("/neon-cap-block off");
 	});
 
+	it("blocks when recorded embedding spend reaches the binding limit", async () => {
+		setup();
+		const sessions = join(tempDir, "sessions");
+		mkdirSync(sessions, { recursive: true });
+		writeFileSync(join(sessions, "session.jsonl"), JSON.stringify({ type: "message", message: {
+			role: "toolResult", toolName: "neon_embed", isError: false, timestamp: Date.now(), usage: { cost: { total: 0.02 } },
+		} }));
+		globalThis.fetch = vi.fn(async (input) => new Response(JSON.stringify(String(input).includes("spending_limit") ? { spending_limit_cents: 2 } : { balance_cents: 2, as_of: "2026-09-22T00:00:00Z" }), { status: 200 })) as typeof fetch;
+		const result = await register()({}, { ui: { notify: vi.fn() } });
+		expect(result.message.content).toContain("local spend $0.02");
+	});
+
 	it("blocks when combined Neon and Anthropic spend reaches the binding limit once", async () => {
 		setup();
 		const sessions = join(tempDir, "sessions");
