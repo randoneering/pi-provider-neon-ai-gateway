@@ -166,7 +166,7 @@ The active org is marked with `*` in the list output. The first time you run one
 /model
 ```
 
-Pick `neon/<model-id>` for chat completions, `neon-anthropic/<claude-id>` for native Claude, or `neon-responses/<gpt-id>` for the two Responses-only models.
+Pick `neon/<model-id>` for chat completions, `neon-anthropic/<claude-id>` for native Claude, or `neon-responses/<gpt-id>` for OpenAI Responses.
 Run `pi --list-models` to see the catalog and `/neon-models` for pricing.
 
 ### Embeddings (opt-in)
@@ -255,6 +255,8 @@ These remain estimates: missing cache rates fall back to the base rate, and GPT-
 
 The `neon` provider uses Chat Completions; `neon-anthropic` uses native Anthropic Messages; `neon-responses` uses the OpenAI Responses API at `/openai/v1/responses`.
 `gpt-5-3-codex` and `gpt-5-5-pro` require the Responses endpoint, so they are exposed only on `neon-responses` ([Neon endpoint guidance](https://neon.com/docs/ai-gateway/models#which-endpoint-to-use)).
+`neon-responses` also exposes GPT-5, GPT-5 Mini and Nano, GPT-5.1, GPT-5.2, GPT-5.4 and its Mini and Nano variants, GPT-5.5, and GPT-5.6 Luna, Sol, and Terra.
+These shared models remain available on chat completions.
 `gpt-6-1-sol` and `gpt-6-astra` also live on `neon-responses`: their chat upstream rejects function tools with every reasoning effort, including `none`, so tool use needs the Responses endpoint. Their chat entries stay for text-only use.
 
 - **Anthropic**: claude-fable-5, claude-fable-5-1, claude-haiku-4-5, claude-haiku-5-5, claude-opus-4-1, claude-opus-4-5, claude-opus-4-6, claude-opus-4-7, claude-opus-4-8, claude-opus-5, claude-opus-5-5, claude-sonnet-4-5, claude-sonnet-4-6, claude-sonnet-5, claude-sonnet-5-5

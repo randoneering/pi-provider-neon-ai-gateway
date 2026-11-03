@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildModelsSource, isChatModel, toNeonModelInput, type UpstreamModel } from "../scripts/update-models.js";
+import { buildModelsSource, isChatModel, thinkingLevelMapFor, toNeonModelInput, type UpstreamModel } from "../scripts/update-models.js";
 
 const fixture: UpstreamModel = {
 	id: "gpt-5-6-luna",
@@ -235,6 +235,27 @@ function responsesEntryBlock(source: string, id: string): string {
 }
 
 describe("RESPONSES_MODELS", () => {
+	it("maps GPT-5 minimal effort without sending none", () => {
+		expect(thinkingLevelMapFor(["minimal", "low", "medium", "high"])).toMatchObject({
+			off: "minimal", minimal: "minimal", low: "low", medium: "medium", high: "high", xhigh: "high",
+		});
+	});
+
+	it("generates live-verified shared models from upstream metadata and keeps chat entries", () => {
+		const model: UpstreamModel = { id: "gpt-5", name: "GPT-5", released: true, reasoning: true, tool_call: true, temperature: false, modalities: { input: ["text", "image"] }, limit: { context: 400000, output: 128000 }, cost: { input: 1.25, output: 10, cache_read: 0.125 }, reasoning_options: [{ type: "effort", values: ["minimal", "low", "medium", "high"] }] };
+		const source = buildModelsSource([model]);
+		const block = responsesEntryBlock(source, "gpt-5");
+		expect(block).toContain('off: "minimal"');
+		expect(block).toContain('minimal: "minimal"');
+		expect(block).toContain("context: 400_000");
+		expect(block).toContain("input: 1.25, output: 10, cacheRead: 0.125");
+		expect(source.slice(source.indexOf("export const NEON_MODELS"), source.indexOf("export interface NeonModelCapabilities"))).toContain('id: "gpt-5"');
+	});
+
+	it("does not expose unavailable or unreleased shared Responses models", () => {
+		const source = buildModelsSource([{ id: "gpt-5-nano", released: false, reasoning_options: [{ type: "effort", values: ["minimal", "low", "medium", "high"] }] }]);
+		expect(responsesEntryBlock(source, "gpt-5-nano")).toBe("");
+	});
 	it("exposes exactly the two Responses-only models on the neon-responses provider", () => {
 		const source = buildModelsSource([codexFixture, proFixture, fixture]);
 		expect(source).toContain("export const RESPONSES_MODELS");
