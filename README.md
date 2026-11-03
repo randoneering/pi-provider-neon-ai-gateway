@@ -51,9 +51,9 @@ pi
 ```
 
 Or run `/neon-login` inside pi and paste both values to configure `neon`, `neon-anthropic`, and `neon-responses`.
-If you logged in before this update, run `/neon-login` again, then `/reload`, to save the Anthropic credential too.
+If you logged in before all three providers were added, run `/neon-login` again, then `/reload`, to save credentials for each provider.
 `/neon-status` reports each provider's configuration and the resolved base URL.
-`/neon-logout` removes both stored credentials; shell environment variables remain unchanged.
+`/neon-logout` removes the stored provider credentials; shell environment variables remain unchanged.
 
 ### Management key (optional)
 
@@ -80,6 +80,7 @@ A read-access key is enough for viewing. Changing the spending cap requires an o
 | `/neon-org list` | yes | List the orgs your management key can access |
 | `/neon-org use <id\|name>` | yes | Switch the active org, persist in `auth.json` |
 | `/neon-models` | no | List Neon chat models with input, output, and cache-read pricing |
+| `/neon-catalog preferred` / `all` / `status` | no | Choose a deduplicated or full model catalog; reload to apply changes |
 | `/neon-decide enable` / `disable` / `status` | no | Control the optional Jev decision tool; gateway credentials are required for calls |
 | `/neon-embed enable` / `disable` / `status` | no | Control the optional Neon embedding tool |
 | `/neon-limits` | no | Show the latest upstream rate-limit headers from 429 responses |
@@ -166,8 +167,14 @@ The active org is marked with `*` in the list output. The first time you run one
 /model
 ```
 
-Pick `neon/<model-id>` for chat completions, `neon-anthropic/<claude-id>` for native Claude, or `neon-responses/<gpt-id>` for OpenAI Responses.
-Run `pi --list-models` to see the catalog and `/neon-models` for pricing.
+By default, each model appears once: `neon-responses` for supported OpenAI models, `neon-anthropic` for Claude, and `neon` for the remaining chat models.
+Run `pi --list-models` to see available selections and `/neon-models` for chat-catalog pricing.
+
+To show every endpoint, including duplicates, run `/neon-catalog all`, then `/reload`.
+Run `/neon-catalog preferred` and `/reload` to return to the default, or `/neon-catalog status` to see the saved and active modes.
+The preference persists in `neon-catalog.json` under pi's agent directory.
+Existing sessions that selected a hidden endpoint may fall back to another model on resume; select the preferred model or enable `all` mode and reload to restore the old selection.
+If a preferred provider is unavailable, run `/neon-login` again and `/reload` to store credentials for all three providers.
 
 ### Embeddings (opt-in)
 
@@ -256,8 +263,8 @@ These remain estimates: missing cache rates fall back to the base rate, and GPT-
 The `neon` provider uses Chat Completions; `neon-anthropic` uses native Anthropic Messages; `neon-responses` uses the OpenAI Responses API at `/openai/v1/responses`.
 `gpt-5-3-codex` and `gpt-5-5-pro` require the Responses endpoint, so they are exposed only on `neon-responses` ([Neon endpoint guidance](https://neon.com/docs/ai-gateway/models#which-endpoint-to-use)).
 `neon-responses` also exposes GPT-5, GPT-5 Mini and Nano, GPT-5.1, GPT-5.2, GPT-5.4 and its Mini and Nano variants, GPT-5.5, and GPT-5.6 Luna, Sol, and Terra.
-These shared models remain available on chat completions.
-`gpt-6-1-sol` and `gpt-6-astra` also live on `neon-responses`: their chat upstream rejects function tools with every reasoning effort, including `none`, so tool use needs the Responses endpoint. Their chat entries stay for text-only use.
+These shared models remain available on chat completions in `/neon-catalog all` mode.
+`gpt-6-1-sol` and `gpt-6-astra` also live on `neon-responses`: their chat upstream rejects function tools with every reasoning effort, including `none`, so tool use needs the Responses endpoint. Their chat entries stay for text-only use in `all` mode.
 
 - **Anthropic**: claude-fable-5, claude-fable-5-1, claude-haiku-4-5, claude-haiku-5-5, claude-opus-4-1, claude-opus-4-5, claude-opus-4-6, claude-opus-4-7, claude-opus-4-8, claude-opus-5, claude-opus-5-5, claude-sonnet-4-5, claude-sonnet-4-6, claude-sonnet-5, claude-sonnet-5-5
 - **OpenAI**: gpt-5, gpt-5-mini, gpt-5-nano, gpt-5-1, gpt-5-2, gpt-5-4, gpt-5-4-mini, gpt-5-4-nano, gpt-5-5, gpt-5-6-luna, gpt-5-6-sol, gpt-5-6-terra, gpt-6-1-sol, gpt-6-astra, gpt-6-luna, gpt-6-sol, gpt-oss-120b, gpt-oss-20b; plus `gpt-5-3-codex` and `gpt-5-5-pro` on `neon-responses`
@@ -271,7 +278,7 @@ These shared models remain available on chat completions.
 - **Thinking Machines**: inkling
 - **TypeSafe decisions**: Jev 1.14 and OpenJev through the optional `neon_decide` tool, separate from chat
 
-Claude models support chat completions on `neon` and native Anthropic Messages on `neon-anthropic`.
+Claude models use native Anthropic Messages on `neon-anthropic`; chat completions on `neon` are available in `all` mode.
 OpenAI Responses models use `neon-responses`; TypeSafe decision models use `neon_decide`.
 This list is a snapshot; the generated catalog is the source of truth, so check `/neon-models` or `pi --list-models` for the current set.
 
