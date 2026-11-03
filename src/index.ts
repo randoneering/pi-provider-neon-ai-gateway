@@ -18,11 +18,12 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { registerNeonCapBlockCommand, registerNeonCapBlockGuard } from "./cap-block.js";
+import { chatModelsForCatalog, readCatalogMode, registerNeonCatalogCommand } from "./catalog.js";
 import { registerNeonAccountCommands, registerNeonSpendingLimitCommand } from "./account.js";
 import { registerNeonAlertHooks } from "./alerts.js";
 import { registerNeonAuthCommands } from "./auth.js";
 import { NEON_AI_GATEWAY_BASE_URL_ENV, NEON_AI_GATEWAY_TOKEN_ENV } from "./config.js";
-import { ANTHROPIC_MODELS, NEON_MODELS, RESPONSES_MODELS } from "./models.js";
+import { ANTHROPIC_MODELS, RESPONSES_MODELS } from "./models.js";
 import { registerNeonDecisionTool } from "./decision-tool.js";
 import { registerNeonEmbeddingTool } from "./embedding-tool.js";
 import { registerNeonModelCostCommand } from "./model-cost.js";
@@ -31,13 +32,14 @@ import { registerNeonRateLimitHook } from "./ratelimit.js";
 import { streamNeon, streamNeonAnthropic, streamNeonResponses } from "./stream.js";
 
 export default function (pi: ExtensionAPI): void {
+	const catalogMode = readCatalogMode();
 	pi.registerProvider("neon", {
 		name: "Neon AI Gateway",
 		baseUrl: `\${${NEON_AI_GATEWAY_BASE_URL_ENV}}/v1`,
 		apiKey: `$${NEON_AI_GATEWAY_TOKEN_ENV}`,
 		authHeader: true,
 		api: "openai-completions",
-		models: NEON_MODELS,
+		models: chatModelsForCatalog(catalogMode),
 		streamSimple: streamNeon,
 	});
 
@@ -61,6 +63,7 @@ export default function (pi: ExtensionAPI): void {
 		streamSimple: streamNeonResponses,
 	});
 
+	registerNeonCatalogCommand(pi, catalogMode);
 	registerNeonAuthCommands(pi);
 	registerNeonDecisionTool(pi);
 	registerNeonEmbeddingTool(pi);
