@@ -22,6 +22,16 @@ describe("context-tier costs", () => {
 });
 
 describe("NEON_MODELS", () => {
+	it("registers Kimi K3.1 Pro with its published limits, prices, and capabilities", () => {
+		expect(NEON_MODELS.find((model) => model.id === "kimi-k3-1-pro")).toMatchObject({
+			name: "Kimi K3.1 Pro", reasoning: true, input: ["text", "image"],
+			contextWindow: 1_048_576, maxTokens: 65_536,
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		});
+		expect(MODEL_CAPABILITIES["kimi-k3-1-pro"]).toEqual({ temperature: true, toolCall: true });
+		expect(isKnownNeonModel("databricks-kimi-k3-1-pro")).toBe(true);
+	});
+
 	it("registers Gemini 4 Argon with its published limits, prices, and sampling support", () => {
 		expect(NEON_MODELS.find((model) => model.id === "gemini-4-argon")).toMatchObject({
 			name: "Gemini 4 Argon", reasoning: true, input: ["text", "image"],

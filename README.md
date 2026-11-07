@@ -272,10 +272,9 @@ These shared models remain available on chat completions in `/neon-catalog all` 
 - **Meta**: llama-4-maverick, meta-llama-3-1-8b-instruct, meta-llama-3-3-70b-instruct
 - **xAI**: grok-4-6, grok-4-7
 - **DeepSeek**: deepseek-v4-1-flash
-- **Moonshot**: kimi-k3
+- **Moonshot**: kimi-k3, kimi-k3-1-pro
 - **Alibaba**: qwen3-next-80b-a3b-instruct, qwen35-122b-a10b
 - **ZhipuAI**: glm-5-2, glm-5-3, glm-5-3-flash
-- **Thinking Machines**: inkling
 - **TypeSafe decisions**: Jev 1.14 and OpenJev through the optional `neon_decide` tool, separate from chat
 
 Claude models use native Anthropic Messages on `neon-anthropic`; chat completions on `neon` are available in `all` mode.

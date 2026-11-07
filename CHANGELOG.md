@@ -6,6 +6,8 @@ All notable changes to `pi-provider-neon-ai-gateway` are documented here. Versio
 
 ### Added
 
+- Kimi K3.1 Pro (`kimi-k3-1-pro`) with Neon's published zero token rates and catalog limits.
+
 - `/neon-catalog preferred|all|status` switches between a deduplicated model picker and all gateway endpoints after `/reload`.
 - `neon-responses` exposes 12 additional GPT-5 models with catalog pricing, context limits, and supported reasoning-effort mappings.
 - `neon_decide` accepts local PNG and JPEG assets for image questions, with Jev's required image opt-in header.
@@ -28,6 +30,7 @@ All notable changes to `pi-provider-neon-ai-gateway` are documented here. Versio
 
 ### Changed
 
+- Regenerated the model catalog and removed Inkling, which no longer appears in Neon's catalog.
 - The default model catalog shows one preferred endpoint per model: Responses for supported OpenAI models, native Anthropic Messages for Claude, and Chat Completions for other models.
 - Older sessions that selected a hidden endpoint may fall back on resume; enable the all-endpoints catalog and reload to restore those entries.
 - Upgraded the pinned `@earendil-works/pi-ai` and `@earendil-works/pi-coding-agent` dev dependencies from 0.85.1 to 1.3.0. The stream adapters now normalize context through the SDK's `normalizeContext`, and the generated catalog builders use a shared base because 1.3.0 turns `Model.compat` into a discriminated union. The gateway-specific workarounds (Gemini signatures, Claude thinking modes, error wrapping) are all still needed against 1.3.0 and stay in place.
