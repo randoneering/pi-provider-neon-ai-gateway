@@ -76,7 +76,7 @@ A read-access key is enough for viewing. Changing the spending cap requires an o
 | `/neon-spending-limit` | yes | Show the org spending cap |
 | `/neon-spending-limit set 50` | yes, admin | Set the cap to $50.00 (dollars, up to 2 decimals) |
 | `/neon-spending-limit clear` | yes, admin | Remove the cap |
-| `/neon-cap-block on` / `off` / `status` | yes | Opt-in guard that blocks turns when local spend reaches the binding limit |
+| `/neon-cap-block on` / `off` / `status` | yes | Opt-in guard for the local spending cap and current credit below $2 |
 | `/neon-org list` | yes | List the orgs your management key can access |
 | `/neon-org use <id\|name>` | yes | Switch the active org, persist in `auth.json` |
 | `/neon-models` | no | List Neon chat models with input, output, and cache-read pricing |
@@ -96,11 +96,16 @@ Neon account balance:
   Spending cap:  $100.00
   Balance:       $77.77 (as of 2026-09-22 23:11 UTC)
   Local spend:   $1.62 across 45 sessions (since Sep 2026)
-  Headroom:      $76.15 (binding limit − local spend, this machine only)
-  Note:          Local spend ignores other machines and any Neon DB charges.
+  Headroom:      $75.77 (conservative local estimate)
+  Note:          Local spend ignores other machines and any Neon DB charges. Org-wide credit metering may be delayed.
 ```
 
-`Headroom` uses the smaller of the spending cap and the credit balance, minus local spend on this machine. It is a derivation, not an org-wide number.
+`Headroom` takes the smaller known allowance: `max(0, cap - local spend)` and `max(0, current balance - $2)`.
+If only one value is available, it uses that allowance; if neither is available, it omits headroom.
+It shows headroom even when there are no completed local sessions.
+Current prepaid balance already draws down as usage is metered, so headroom does not subtract cumulative local spend from it again.
+This is a conservative local estimate, not guaranteed org-wide capacity: metering may be delayed, and concurrent requests can take the balance below $2 or negative.
+See [Neon's prepaid credit rules](https://neon.com/docs/ai-gateway/prepaid-credits).
 
 ### Spending cap alerts
 
@@ -134,19 +139,26 @@ powerlineConfig.layout.left = [
 
 ### Opt-in cap blocking
 
-By default, alerts are advisory. To stop agent turns when local spend reaches the binding limit:
+By default, alerts are advisory and blocking is off.
+Enable the guard to stop agent turns when cumulative local spend reaches a known local comparison cap, or when known current prepaid balance is below $2:
 
 ```text
 /neon-cap-block on
 ```
 
-The setting persists in `auth.json` under `neon.capBlockEnabled`. When blocked, the message shows local spend, the binding limit, and how to disable it:
+The setting persists in `auth.json` under `neon.capBlockEnabled`.
+The cap compares only against this machine's cumulative local spend, not Neon's daily usage.
+The credit check uses current balance independently of local spend; exactly $2 is allowed unless the local cap is reached.
+A low-credit block tells you to add credits rather than wait for a temporary retry:
 
 ```text
-Neon cap block: local spend $1.62 has reached the binding limit of $0.01 on this machine. This opt-in local-spend block prevented the agent turn. Run /neon-cap-block off to disable it.
+Neon cap block: current prepaid balance $1.99 is below the $2.00 minimum. Add credits in the Neon Console to resume Gateway calls; a temporary retry does not replenish credits. This opt-in guard prevented the agent turn. Run /neon-cap-block off to disable it.
 ```
 
-Missing credentials and management API failures fail open so an API outage does not unexpectedly block the agent.
+A local-cap block reports local spend and the local comparison cap instead.
+The guard requires a management key and a saved org, as before.
+If cap or balance lookup fails, the other known condition still applies; if neither condition can be verified, the guard fails open.
+Disabling this local guard does not bypass Gateway credit or usage limits.
 
 ### Multi-org
 
@@ -318,8 +330,22 @@ The gateway speaks standard OpenAI Chat Completions. Common status codes:
 | 401 | Missing or invalid token |
 | 403 | Token lacks `ai_gateway:invoke` scope, or branch isn't in credential lineage |
 | 413 | Body exceeds 32 MiB |
-| 429 | Neon per-minute TPM (200K soft cap) or upstream provider limit. Honor `Retry-After` / `X-Ratelimit-*` |
+| 429 | Short-window rate limit, daily spend cap, or prepaid balance below $2. Check the cause before retrying |
 | 502 | Upstream blip, retry |
+
+For 429 responses, [Neon's prepaid credit docs](https://neon.com/docs/ai-gateway/prepaid-credits#usage-limits) distinguish:
+
+- **Short-window limits:** honor `Retry-After`, which points to the next minute.
+  Any `x-ratelimit-*` headers come from the upstream provider, not Neon's limits.
+- **Daily spend cap:** defaults to $20 per day and may vary by account.
+  A short-window retry does not reset it; wait for the daily allowance or request a limit increase.
+- **Depleted credit:** new calls return 429 while current balance is below $2.
+  Add credits in the Neon Console; retrying alone does not replenish them.
+
+The default token limit is 200,000 TPM for input and output separately, and may vary by account.
+Balance draws down as usage is metered and can go negative with concurrent requests.
+These are Gateway limits, separate from the opt-in cumulative local-spend guard.
+This extension does not add automatic retries for these conditions.
 
 Full table: [chat completions reference](https://neon.com/docs/ai-gateway/chat-completions#error-handling).
 

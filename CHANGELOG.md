@@ -38,6 +38,9 @@ All notable changes to `pi-provider-neon-ai-gateway` are documented here. Versio
 
 ### Fixed
 
+- Cap blocking checks current prepaid credit below $2 separately from the cumulative local-spend cap, including when only one limit is available.
+- `/neon-balance` headroom reserves $2 without subtracting local spend from current credit again, handles negative balances, and labels delayed org-wide metering.
+- README 429 guidance separates temporary rate limits, daily caps, and credit top-ups.
 - Successful `neon_embed` calls now count toward local Neon spending, alerts, and cap blocking.
 - Generated chat, Anthropic, and Responses model costs include Neon's published long-context tiers for pi's usage estimates.
 - Gemini 3/4, Gemma 3 12B, and Qwen 3.5 122B chat requests map `developer` messages to `system` for upstream compatibility.
