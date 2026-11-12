@@ -175,6 +175,9 @@ export function parseUserOrganizations(value: unknown): ParsedOrg | undefined {
 	return undefined;
 }
 
+// https://neon.com/docs/ai-gateway/prepaid-credits#how-credits-and-pricing-work
+export const AI_GATEWAY_MIN_BALANCE_CENTS = 200;
+
 export interface AiGatewayCreditBalance {
 	balanceCents: number;
 	asOf: string;
@@ -183,7 +186,7 @@ export interface AiGatewayCreditBalance {
 export function parseAiGatewayCreditBalance(value: unknown): AiGatewayCreditBalance | null {
 	if (!isRecord(value)) return null;
 	const cents = value.balance_cents;
-	if (typeof cents !== "number" || !Number.isFinite(cents) || cents < 0) return null;
+	if (typeof cents !== "number" || !Number.isFinite(cents)) return null;
 	const asOf = value.as_of;
 	if (typeof asOf !== "string" || asOf.length === 0) return null;
 	return { balanceCents: cents, asOf };
@@ -479,7 +482,7 @@ export function registerNeonAccountCommands(pi: ExtensionAPI): void {
 				const active = await resolveActiveOrg({ storedOrgId: stored.orgId, apiKey: managementKey });
 				const orgId = active.orgId;
 				const orgDisplay = active.orgDisplay;
-				const cap = await fetchSpendingLimit(orgId, managementKey);
+				const cap = await fetchSpendingLimit(orgId, managementKey).catch(() => undefined);
 				const balance = await fetchAiGatewayCreditBalance(orgId, managementKey);
 				const local = await aggregateLocalSpend(getAgentDir());
 
@@ -487,7 +490,7 @@ export function registerNeonAccountCommands(pi: ExtensionAPI): void {
 				const row = (label: string, value: string) =>
 					`  ${label.padEnd(15, " ")}${value}`;
 				lines.push(row("Org:", orgDisplay));
-				lines.push(row("Spending cap:", cap === null ? "(none configured)" : formatUsd(cap)));
+				lines.push(row("Spending cap:", cap === undefined ? "(unavailable)" : cap === null ? "(none configured)" : formatUsd(cap)));
 				lines.push(
 					row(
 						"Balance:",
@@ -506,13 +509,15 @@ export function registerNeonAccountCommands(pi: ExtensionAPI): void {
 							`${formatUsd(local.totalCost)} across ${local.sessionCount} session${local.sessionCount === 1 ? "" : "s"} (since ${since})`,
 						),
 					);
-					const bindingLimit = cap ?? (balance === null ? undefined : balance.balanceCents / 100);
-					if (bindingLimit !== undefined) {
-						const headroom = Math.max(0, bindingLimit - local.totalCost);
-						lines.push(row("Headroom:", `${formatUsd(headroom)} (binding limit − local spend, this machine only)`));
-					}
 				}
-				lines.push(row("Note:", "Local spend ignores other machines and any Neon DB charges."));
+				const capHeadroom = cap == null ? undefined : Math.max(0, cap - local.totalCost);
+				// Current credits already reflect metered usage, so do not subtract local spend again.
+				const creditHeadroom = balance === null ? undefined : Math.max(0, (balance.balanceCents - AI_GATEWAY_MIN_BALANCE_CENTS) / 100);
+				if (capHeadroom !== undefined || creditHeadroom !== undefined) {
+					const headroom = Math.min(capHeadroom ?? Infinity, creditHeadroom ?? Infinity);
+					lines.push(row("Headroom:", `${formatUsd(headroom)} (conservative local estimate)`));
+				}
+				lines.push(row("Note:", "Local spend ignores other machines and any Neon DB charges. Org-wide credit metering may be delayed."));
 
 				ctx.ui.notify(lines.join("\n"), "info");
 			} catch (error) {

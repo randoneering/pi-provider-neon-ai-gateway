@@ -38,6 +38,9 @@ All notable changes to `pi-provider-neon-ai-gateway` are documented here. Versio
 
 ### Fixed
 
+- Cap blocking checks current prepaid credit below $2 separately from the cumulative local-spend cap, including when only one limit is available.
+- `/neon-balance` headroom reserves $2 without subtracting local spend from current credit again, handles negative balances, and labels delayed org-wide metering.
+- README 429 guidance separates temporary rate limits, daily caps, and credit top-ups.
 - README eligibility and credit purchase guidance now includes Free-plan AI Gateway access without upgrading, with purchases from $5 and paid-only auto-reload.
 - Kimi K3.1 Pro cost estimates use Neon's published rates of $2 input, $10 output, and $0.20 cached input per million tokens instead of zero.
 - Successful `neon_embed` calls now count toward local Neon spending, alerts, and cap blocking.
