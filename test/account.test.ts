@@ -406,7 +406,8 @@ describe("/neon-balance command output", () => {
 		expect(text).toMatch(/Spending cap:\s+\$50\.00/);
 		expect(text).toMatch(/Local spend:\s+\$0\.23/);
 		expect(text).toMatch(/Headroom:\s+\$49\.77/);
-		expect(text).toContain("(binding limit − local spend, this machine only)");
+		expect(text).toContain("(conservative local estimate)");
+		expect(text).toContain("Org-wide credit metering may be delayed.");
 		expect(text).toMatch(/Balance:\s+\(no balance\)/);
 		expect(text).toMatch(/Note:\s+Local spend ignores other machines/);
 		// Negative regression: we must NOT claim we know the real balance.
@@ -498,6 +499,60 @@ describe("/neon-balance command output", () => {
 		await fakePi._handler!("", fakeCtx);
 		const text = notifications[0]!.message;
 		expect(text).toContain("Balance:       $77.77 (as of 2026-09-22 23:11 UTC)");
+	});
+
+	it.each([
+		{ name: "uses credit headroom when it is smaller", capCents: 10000, balanceCents: 7777, spend: 1.62, expected: "$75.77" },
+		{ name: "uses cap headroom when it is smaller", capCents: 10000, balanceCents: 20000, spend: 25, expected: "$75.00" },
+		{ name: "does not subtract local spend from current balance again", capCents: null, balanceCents: 10000, spend: 500, expected: "$98.00" },
+		{ name: "uses cap alone when balance is null", capCents: 10000, balanceCents: null, spend: 25, expected: "$75.00" },
+		{ name: "uses balance alone when cap is null", capCents: null, balanceCents: 10000, spend: 25, expected: "$98.00" },
+		{ name: "uses balance when cap fetch throws", capCents: "offline", balanceCents: 10000, spend: 25, expected: "$98.00" },
+		{ name: "uses balance when cap endpoint is unavailable", capCents: "unavailable", balanceCents: 10000, spend: 25, expected: "$98.00" },
+		{ name: "uses cap when balance fetch throws", capCents: 10000, balanceCents: "offline", spend: 25, expected: "$75.00" },
+		{ name: "clamps exhausted cap headroom to zero", capCents: 10000, balanceCents: 20000, spend: 150, expected: "$0.00" },
+		{ name: "clamps credit headroom at 199 cents to zero", capCents: 10000, balanceCents: 199, spend: 0, expected: "$0.00" },
+		{ name: "shows zero headroom at exactly 200 cents", capCents: 10000, balanceCents: 200, spend: 0, expected: "$0.00" },
+		{ name: "shows one cent above the credit minimum", capCents: null, balanceCents: 201, spend: 0, expected: "$0.01" },
+		{ name: "accepts negative metered balance and clamps headroom", capCents: null, balanceCents: -100, spend: 0, expected: "$0.00" },
+		{ name: "shows cap headroom without completed sessions", capCents: 10000, balanceCents: null, spend: 0, expected: "$100.00" },
+		{ name: "shows balance headroom without completed sessions", capCents: null, balanceCents: 10000, spend: 0, expected: "$98.00" },
+		{ name: "shows zero headroom for a zero cap", capCents: 0, balanceCents: 10000, spend: 0, expected: "$0.00" },
+		{ name: "omits headroom when both values are missing", capCents: null, balanceCents: null, spend: 25, expected: null },
+		{ name: "omits headroom without limits or sessions", capCents: null, balanceCents: null, spend: 0, expected: null },
+	] as const)("$name", async ({ capCents, balanceCents, spend, expected }) => {
+		writeFileSync(join(tempDir, "auth.json"), JSON.stringify({ neon: { type: "api_key", key: "nt_live_test", managementKey: "napi_test", orgId: "org-test-1" } }));
+		if (spend > 0) {
+			const sessionsDir = join(tempDir, "sessions", "proj-a");
+			mkdirSync(sessionsDir, { recursive: true });
+			writeFileSync(join(sessionsDir, "s1.jsonl"), sampleMessageLine(spend));
+		}
+		globalThis.fetch = (async (input: RequestInfo | URL) => {
+			if (String(input).includes("spending_limit")) {
+				if (capCents === "offline") throw new Error("offline");
+				if (capCents === "unavailable") return new Response("unavailable", { status: 503 });
+				return new Response(JSON.stringify({ spending_limit_cents: capCents }), { status: 200 });
+			}
+			if (balanceCents === "offline") throw new Error("offline");
+			return new Response(JSON.stringify({ balance_cents: balanceCents, as_of: "2026-09-22T00:00:00Z" }), { status: 200 });
+		}) as typeof fetch;
+		const notifications: string[] = [];
+		const pi = {
+			_handler: undefined as ((args: string, ctx: unknown) => Promise<void>) | undefined,
+			registerCommand(_name: string, options: { handler: (args: string, ctx: unknown) => Promise<void> }): void { this._handler = options.handler; },
+		};
+		accountModule.registerNeonAccountCommands(pi as never);
+		await pi._handler!("", { ui: { notify: (message: string) => notifications.push(message) } });
+		expect(notifications).toHaveLength(1);
+		const text = notifications[0]!;
+		expect(text).toContain("Neon account balance:");
+		if (expected === null) {
+			expect(text).not.toContain("Headroom:");
+		} else {
+			expect(text.split("\n").find((line) => line.includes("Headroom:"))?.trim()).toBe(`Headroom:      ${expected} (conservative local estimate)`);
+			expect(text).toContain("Org-wide credit metering may be delayed.");
+		}
+		if (balanceCents === -100) expect(text).toMatch(/Balance:\s+\$-1\.00/);
 	});
 
 	it("uses the persisted orgId and skips /users/me/organizations", async () => {
