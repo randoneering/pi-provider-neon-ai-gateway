@@ -30,7 +30,9 @@ pi -e /path/to/pi-provider-neon-ai-gateway/src/index.ts
 
 ## Configure
 
-You need a Neon **Launch** or **Scale** plan with prepaid credits, and a project in `aws-us-east-2`, `aws-us-east-1`, `aws-eu-central-1`, or `aws-ap-southeast-1`. Free tier can't use AI Gateway.
+You can use AI Gateway on every Neon plan, including **Free**, with prepaid credits and a project in `aws-us-east-2`, `aws-us-east-1`, `aws-eu-central-1`, or `aws-ap-southeast-1`.
+An organization admin can add a payment card and buy [prepaid credits](https://neon.com/docs/ai-gateway/prepaid-credits) from **$5** under **Billing > AI gateway credits** in the Neon Console without upgrading the Free plan.
+Auto-reload remains available only on paid plans.
 
 ### Mint a credential
 
@@ -281,7 +283,7 @@ Claude models use native Anthropic Messages on `neon-anthropic`; chat completion
 OpenAI Responses models use `neon-responses`; TypeSafe decision models use `neon_decide`.
 This list is a snapshot; the generated catalog is the source of truth, so check `/neon-models` or `pi --list-models` for the current set.
 
-All catalog models are available on a paid plan with prepaid credits; a separate access request is no longer required.
+All catalog models are available on every Neon plan, including Free, with prepaid credits; a separate access request is no longer required.
 
 ### Model compatibility
 

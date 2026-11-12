@@ -38,6 +38,7 @@ All notable changes to `pi-provider-neon-ai-gateway` are documented here. Versio
 
 ### Fixed
 
+- README eligibility and credit purchase guidance now includes Free-plan AI Gateway access without upgrading, with purchases from $5 and paid-only auto-reload.
 - Kimi K3.1 Pro cost estimates use Neon's published rates of $2 input, $10 output, and $0.20 cached input per million tokens instead of zero.
 - Successful `neon_embed` calls now count toward local Neon spending, alerts, and cap blocking.
 - Generated chat, Anthropic, and Responses model costs include Neon's published long-context tiers for pi's usage estimates.
