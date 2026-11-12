@@ -14,17 +14,21 @@ function withBase(payload: Record<string, unknown>): Record<string, unknown> {
 }
 
 describe("transformNeonPayload", () => {
-	it.each(["gemini-4-argon", "DATABRICKS-GEMINI-4-ARGON"])("preserves Gemini 4 tool signatures and strips unsupported sampling for %s", (id) => {
+	it.each(["gemini-4-argon", "DATABRICKS-GEMINI-4-ARGON", "gemini-4-carbon", "DATABRICKS-GEMINI-4-CARBON"])("preserves Gemini 4 tool signatures and strips unsupported sampling for %s", (id) => {
 		const result = transformNeonPayload(withBase({
 			frequency_penalty: 1, presence_penalty: 1, temperature: 1, top_p: 1,
-			messages: [{ role: "assistant", tool_calls: [{ id: "tool-1", type: "function", function: { name: "echo", arguments: "{}" } }],
+			reasoning_effort: "high", stream: true, stream_options: { include_usage: true },
+			messages: [{ role: "developer", content: "Use tools" }, { role: "assistant", tool_calls: [{ id: "tool-1", type: "function", function: { name: "echo", arguments: "{}" } }],
 				reasoning_details: [{ type: "reasoning.encrypted", format: "neon-gemini", id: "tool-1", data: "opaque-signature" }] }],
 		}), id) as Record<string, unknown>;
 		expect(result.frequency_penalty).toBeUndefined();
 		expect(result.presence_penalty).toBeUndefined();
 		expect(result.temperature).toBeUndefined();
 		expect(result.top_p).toBeUndefined();
-		expect(result.messages).toEqual([{ role: "assistant", tool_calls: [{ id: "tool-1", type: "function", function: { name: "echo", arguments: "{}" }, thoughtSignature: "opaque-signature" }] }]);
+		expect(result).not.toHaveProperty("reasoning_effort");
+		expect(result.stream).toBe(true);
+		expect(result.stream_options).toEqual({ include_usage: true });
+		expect(result.messages).toEqual([{ role: "system", content: "Use tools" }, { role: "assistant", tool_calls: [{ id: "tool-1", type: "function", function: { name: "echo", arguments: "{}" }, thoughtSignature: "opaque-signature" }] }]);
 	});
 
 	it("returns non-record values unchanged", () => {

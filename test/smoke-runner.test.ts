@@ -205,7 +205,7 @@ describe("smoke runner through real extension adapters", () => {
 		expect(requests[0]?.body).not.toHaveProperty("stream_options");
 	});
 
-	it.each(["gemini-3-8-flash", "gemini-4-argon"])("normalizes %s stop after tools and resets state for the next request", async (modelId) => {
+	it.each(["gemini-3-8-flash", "gemini-4-argon", "gemini-4-carbon"])("normalizes %s stop after tools and resets state for the next request", async (modelId) => {
 		const { fetch, requests } = captureFetch([
 			() => chatResponse([{ index: 0, id: "call_test", type: "function", function: {
 				name: "smoke_echo", arguments: JSON.stringify({ message: OK }),
@@ -217,7 +217,7 @@ describe("smoke runner through real extension adapters", () => {
 		expect(requests).toHaveLength(2);
 	});
 
-	it.each(["gemini-3-8-flash", "gemini-4-argon"])("preserves %s thought signatures through saved history and tool replay", async (modelId) => {
+	it.each(["gemini-3-8-flash", "gemini-4-argon", "gemini-4-carbon"])("preserves %s thought signatures through saved history and tool replay", async (modelId) => {
 		const { fetch, requests } = captureFetch([
 			() => chatResponse([{ index: 0, id: "call_test", type: "function", thoughtSignature: "fake-opaque-signature", function: {
 				name: "smoke_echo", arguments: JSON.stringify({ message: OK }),

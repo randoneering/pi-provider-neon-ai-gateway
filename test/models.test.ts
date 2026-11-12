@@ -22,6 +22,19 @@ describe("context-tier costs", () => {
 });
 
 describe("NEON_MODELS", () => {
+	it.each([
+		{ id: "claude-fable-5-2", name: "Claude Fable 5.2", contextWindow: 1_000_000, maxTokens: 128_000,
+			cost: { input: 8, output: 40, cacheRead: 0.2, cacheWrite: 10 } },
+		{ id: "gemini-4-carbon", name: "Gemini 4 Carbon", contextWindow: 1_048_576, maxTokens: 65_536,
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } },
+	])("registers $id with published metadata and capabilities", (expected) => {
+		expect(NEON_MODELS.find((model) => model.id === expected.id)).toMatchObject({
+			...expected, reasoning: true, input: ["text", "image"],
+		});
+		expect(MODEL_CAPABILITIES[expected.id]).toEqual({ temperature: false, toolCall: true });
+		expect(isKnownNeonModel(`DATABRICKS-${expected.id.toUpperCase()}`)).toBe(true);
+	});
+
 	it("registers Kimi K3.1 Pro with its published limits, prices, and capabilities", () => {
 		expect(NEON_MODELS.find((model) => model.id === "kimi-k3-1-pro")).toMatchObject({
 			name: "Kimi K3.1 Pro", reasoning: true, input: ["text", "image"],
@@ -151,10 +164,11 @@ describe("MODEL_CAPABILITIES", () => {
 });
 
 describe("ANTHROPIC_MODELS", () => {
-	it("covers the upstream Anthropic Messages supported list", () => {
+	it("covers documented Anthropic Messages models and live-verified Fable 5.2", () => {
 		const expected = [
 			"claude-fable-5",
 			"claude-fable-5-1",
+			"claude-fable-5-2",
 			"claude-haiku-4-5",
 			"claude-haiku-5-5",
 			"claude-opus-4-1",

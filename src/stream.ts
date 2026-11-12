@@ -44,7 +44,7 @@ import { canonicalModelId, MODEL_CAPABILITIES } from "./models.js";
 
 type NeonApi = "openai-completions";
 
-// Native Messages thinking modes from Neon's Anthropic endpoint contract.
+// Native thinking modes follow Neon's contract and live Fable 5.2 probes.
 const CLAUDE_THINKING_MODES: Record<string, "adaptive" | "always-adaptive" | "between-tools"> = {
 	"claude-opus-4-7": "adaptive",
 	"claude-opus-4-8": "adaptive",
@@ -56,6 +56,7 @@ const CLAUDE_THINKING_MODES: Record<string, "adaptive" | "always-adaptive" | "be
 	"claude-haiku-5-5": "adaptive",
 	"claude-fable-5": "always-adaptive",
 	"claude-fable-5-1": "always-adaptive",
+	"claude-fable-5-2": "always-adaptive",
 };
 
 // ---------------------------------------------------------------------------
