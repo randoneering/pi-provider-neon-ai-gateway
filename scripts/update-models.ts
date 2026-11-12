@@ -247,14 +247,16 @@ export function thinkingLevelMapFor(efforts: readonly string[]): Record<string, 
 /**
  * Canonical Claude ids exposed on `/anthropic/v1/messages`. Mirrors the
  * upstream docs page (https://neon.com/docs/ai-gateway/anthropic-messages,
- * "Supported models" table). Update this set when a new Claude id lands
- * in the catalog and the docs page calls it out. The corresponding
+ * "Supported models" table), plus live-verified Fable 5.2. Add undocumented
+ * ids only after streaming, tool replay, and thinking-mode probes pass.
+ * The corresponding
  * `ANTHROPIC_MODELS` array is derived from `NEON_MODELS` by filtering on
  * this set, so every id here must also be present in the chat catalog.
  */
 const ANTHROPIC_MODEL_IDS = new Set([
 	"claude-fable-5",
 	"claude-fable-5-1",
+	"claude-fable-5-2",
 	"claude-haiku-4-5",
 	"claude-haiku-5-5",
 	"claude-opus-4-1",
@@ -513,8 +515,8 @@ export function isKnownNeonModel(id: string): boolean {
 
 /**
  * Canonical model ids exposed on the \`/anthropic/v1/messages\` endpoint.
- * Hardcoded in scripts/update-models.ts and reconciled with the upstream
- * docs page. Update the set there when a new Claude id is added.
+ * Hardcoded in scripts/update-models.ts from upstream docs and live probes
+ * for Fable 5.2. Update the set there when a new Claude id is confirmed.
  */
 export const ANTHROPIC_MODEL_IDS: ReadonlySet<string> = new Set([
 ${anthropicIds.map((id) => `\t${JSON.stringify(id)},`).join("\n")}

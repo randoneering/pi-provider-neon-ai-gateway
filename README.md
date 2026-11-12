@@ -266,9 +266,9 @@ The `neon` provider uses Chat Completions; `neon-anthropic` uses native Anthropi
 These shared models remain available on chat completions in `/neon-catalog all` mode.
 `gpt-6-1-sol` and `gpt-6-astra` also live on `neon-responses`: their chat upstream rejects function tools with every reasoning effort, including `none`, so tool use needs the Responses endpoint. Their chat entries stay for text-only use in `all` mode.
 
-- **Anthropic**: claude-fable-5, claude-fable-5-1, claude-haiku-4-5, claude-haiku-5-5, claude-opus-4-1, claude-opus-4-5, claude-opus-4-6, claude-opus-4-7, claude-opus-4-8, claude-opus-5, claude-opus-5-5, claude-sonnet-4-5, claude-sonnet-4-6, claude-sonnet-5, claude-sonnet-5-5
+- **Anthropic**: claude-fable-5, claude-fable-5-1, claude-fable-5-2, claude-haiku-4-5, claude-haiku-5-5, claude-opus-4-1, claude-opus-4-5, claude-opus-4-6, claude-opus-4-7, claude-opus-4-8, claude-opus-5, claude-opus-5-5, claude-sonnet-4-5, claude-sonnet-4-6, claude-sonnet-5, claude-sonnet-5-5
 - **OpenAI**: gpt-5, gpt-5-mini, gpt-5-nano, gpt-5-1, gpt-5-2, gpt-5-4, gpt-5-4-mini, gpt-5-4-nano, gpt-5-5, gpt-5-6-luna, gpt-5-6-sol, gpt-5-6-terra, gpt-6-1-sol, gpt-6-astra, gpt-6-luna, gpt-6-sol, gpt-oss-120b, gpt-oss-20b; plus `gpt-5-3-codex` and `gpt-5-5-pro` on `neon-responses`
-- **Google**: gemini-3-1-flash-lite, gemini-3-1-pro, gemini-3-5-flash, gemini-3-5-flash-lite, gemini-3-6-flash, gemini-3-7-flash, gemini-3-8-flash, gemini-3-flash, gemini-4-argon, gemma-3-12b
+- **Google**: gemini-3-1-flash-lite, gemini-3-1-pro, gemini-3-5-flash, gemini-3-5-flash-lite, gemini-3-6-flash, gemini-3-7-flash, gemini-3-8-flash, gemini-3-flash, gemini-4-argon, gemini-4-carbon, gemma-3-12b
 - **Meta**: llama-4-maverick, meta-llama-3-1-8b-instruct, meta-llama-3-3-70b-instruct
 - **xAI**: grok-4-6, grok-4-7
 - **DeepSeek**: deepseek-v4-1-flash
@@ -288,17 +288,21 @@ All catalog models are available on a paid plan with prepaid credits; a separate
 Gemini 3 streaming omits the rejected `stream_options` field.
 Gemini 3 and 4 tool calls keep their opaque [thought signatures](https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures) through saved history and replay, and a final `stop` becomes `tool_calls` only when that choice emitted tools.
 Normal text stops and truncation stay unchanged.
-Gemini 4 Argon uses its default thinking behavior: the chat gateway rejects `reasoning_effort`, so the extension omits it.
+Gemini 4 Argon and Carbon use their default thinking behavior: the chat gateway rejects `reasoning_effort`, so the extension omits it.
 Pi's thinking selection does not control Gemini 4 reasoning depth on this endpoint.
+Carbon keeps the zero prices published in Neon's catalog; these estimates do not establish that gateway usage is free.
 
 Newer Claude models on `neon-anthropic` use these native thinking modes:
 
 | Models | Thinking off | Thinking on |
 |---|---|---|
-| Opus 5.5, Fable 5/5.1 | Adaptive, low effort; off is unavailable | Adaptive, requested effort |
+| Opus 5.5, Fable 5/5.1/5.2 | Adaptive, low effort; off is unavailable | Adaptive, requested effort |
 | Sonnet 5.5 | `between_tools` | Adaptive, requested effort |
 | Opus 4.7/4.8/5, Sonnet 5, Haiku 5.5 | Disabled | Adaptive, requested effort |
 
+Fable 5.2 native support is live-tested for streaming, tool replay, and adaptive thinking, including the low-effort fallback when pi thinking is off.
+Neon's native endpoint docs do not yet list Fable 5.2; the gateway rejects disabled thinking.
+Claude chat completions omit `reasoning_effort`, so use `neon-anthropic` to select Fable's thinking effort.
 Other Claude models keep the pinned SDK's existing thinking behavior.
 See [Neon's native thinking reference](https://neon.com/docs/ai-gateway/anthropic-messages#extended-thinking).
 

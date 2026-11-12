@@ -6,7 +6,9 @@ All notable changes to `pi-provider-neon-ai-gateway` are documented here. Versio
 
 ### Added
 
-- Kimi K3.1 Pro (`kimi-k3-1-pro`) with Neon's published zero token rates and catalog limits.
+- Claude Fable 5.2 (`claude-fable-5-2`) with published limits and pricing, plus live-tested native Messages streaming, tools, and adaptive thinking. Thinking off uses low adaptive effort because the gateway rejects disabled thinking; Neon's native endpoint docs do not yet list this model.
+- Gemini 4 Carbon (`gemini-4-carbon`) with published limits and zero catalog prices, Gemini 4 payload cleanup, and thought-signature replay. Published zeros do not establish free usage; chat keeps the model's default thinking.
+- Kimi K3.1 Pro (`kimi-k3-1-pro`) with Neon's published token rates and catalog limits.
 
 - `/neon-catalog preferred|all|status` switches between a deduplicated model picker and all gateway endpoints after `/reload`.
 - `neon-responses` exposes 12 additional GPT-5 models with catalog pricing, context limits, and supported reasoning-effort mappings.

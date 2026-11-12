@@ -37,7 +37,7 @@ async function captureRequest(modelId: string, thinking: boolean, overrides: Sim
 
 const adaptiveModels = [
 	"claude-opus-4-7", "claude-opus-4-8", "claude-opus-5", "claude-opus-5-5",
-	"claude-sonnet-5", "claude-sonnet-5-5", "claude-haiku-5-5", "claude-fable-5", "claude-fable-5-1",
+	"claude-sonnet-5", "claude-sonnet-5-5", "claude-haiku-5-5", "claude-fable-5", "claude-fable-5-1", "claude-fable-5-2",
 ];
 
 describe("Neon Anthropic thinking compatibility", () => {
@@ -49,7 +49,7 @@ describe("Neon Anthropic thinking compatibility", () => {
 		expect(body).not.toHaveProperty("temperature");
 	});
 
-	it.each(["claude-opus-5-5", "claude-fable-5", "claude-fable-5-1"])("uses low adaptive effort when %s cannot disable thinking", async (id) => {
+	it.each(["claude-opus-5-5", "claude-fable-5", "claude-fable-5-1", "claude-fable-5-2"])("uses low adaptive effort when %s cannot disable thinking", async (id) => {
 		const body = await captureRequest(id, false, { temperature: 0.7 });
 		expect(body.thinking).toMatchObject({ type: "adaptive" });
 		expect(body.output_config).toMatchObject({ effort: "low" });
@@ -83,8 +83,8 @@ describe("Neon Anthropic thinking compatibility", () => {
 		expect(body.temperature).toBe(0.7);
 	});
 
-	it("keeps caller effort choices instead of overwriting them with the mandatory fallback", async () => {
-		const body = await captureRequest("claude-opus-5-5", false, { reasoning: "high" });
+	it.each(["claude-opus-5-5", "claude-fable-5-2"])("keeps %s caller effort choices instead of overwriting them with the mandatory fallback", async (id) => {
+		const body = await captureRequest(id, false, { reasoning: "high" });
 		expect(body.output_config).toMatchObject({ effort: "high" });
 	});
 

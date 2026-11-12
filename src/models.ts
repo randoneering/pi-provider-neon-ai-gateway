@@ -87,6 +87,15 @@ export const NEON_MODELS: Model<"openai-completions">[] = [
 		cost: { input: 10, output: 50, cacheRead: 0.25, cacheWrite: 12.5 },
 	}),
 	m({
+		id: "claude-fable-5-2",
+		name: "Claude Fable 5.2",
+		reasoning: true,
+		input: ["text", "image"],
+		context: 1_000_000,
+		output: 128_000,
+		cost: { input: 8, output: 40, cacheRead: 0.2, cacheWrite: 10 },
+	}),
+	m({
 		id: "claude-haiku-4-5",
 		name: "Claude Haiku 4.5",
 		reasoning: true,
@@ -292,6 +301,15 @@ export const NEON_MODELS: Model<"openai-completions">[] = [
 		context: 1_048_576,
 		output: 65_536,
 		cost: { input: 4, output: 20, cacheRead: 0.2, cacheWrite: 0 },
+	}),
+	m({
+		id: "gemini-4-carbon",
+		name: "Gemini 4 Carbon",
+		reasoning: true,
+		input: ["text", "image"],
+		context: 1_048_576,
+		output: 65_536,
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 	}),
 	m({
 		id: "gemma-3-12b",
@@ -585,6 +603,7 @@ export interface NeonModelCapabilities {
 export const MODEL_CAPABILITIES: Record<string, NeonModelCapabilities> = {
 	"claude-fable-5": { temperature: false, toolCall: true },
 	"claude-fable-5-1": { temperature: false, toolCall: true },
+	"claude-fable-5-2": { temperature: false, toolCall: true },
 	"claude-haiku-4-5": { temperature: true, toolCall: true },
 	"claude-haiku-5-5": { temperature: false, toolCall: true },
 	"claude-opus-4-1": { temperature: true, toolCall: true },
@@ -608,6 +627,7 @@ export const MODEL_CAPABILITIES: Record<string, NeonModelCapabilities> = {
 	"gemini-3-8-flash": { temperature: false, toolCall: true },
 	"gemini-3-flash": { temperature: true, toolCall: true },
 	"gemini-4-argon": { temperature: false, toolCall: true },
+	"gemini-4-carbon": { temperature: false, toolCall: true },
 	"gemma-3-12b": { temperature: true, toolCall: true },
 	"glm-5-2": { temperature: true, toolCall: true },
 	"glm-5-3": { temperature: true, toolCall: true },
@@ -656,12 +676,13 @@ export function isKnownNeonModel(id: string): boolean {
 
 /**
  * Canonical model ids exposed on the `/anthropic/v1/messages` endpoint.
- * Hardcoded in scripts/update-models.ts and reconciled with the upstream
- * docs page. Update the set there when a new Claude id is added.
+ * Hardcoded in scripts/update-models.ts from upstream docs and live probes
+ * for Fable 5.2. Update the set there when a new Claude id is confirmed.
  */
 export const ANTHROPIC_MODEL_IDS: ReadonlySet<string> = new Set([
 	"claude-fable-5",
 	"claude-fable-5-1",
+	"claude-fable-5-2",
 	"claude-haiku-4-5",
 	"claude-haiku-5-5",
 	"claude-opus-4-1",
@@ -701,6 +722,15 @@ export const ANTHROPIC_MODELS: Model<AnthropicApi>[] = [
 		context: 1_000_000,
 		output: 128_000,
 		cost: { input: 10, output: 50, cacheRead: 0.25, cacheWrite: 12.5 },
+	}),
+	mAnthropic({
+		id: "claude-fable-5-2",
+		name: "Claude Fable 5.2",
+		reasoning: true,
+		input: ["text", "image"],
+		context: 1_000_000,
+		output: 128_000,
+		cost: { input: 8, output: 40, cacheRead: 0.2, cacheWrite: 10 },
 	}),
 	mAnthropic({
 		id: "claude-haiku-4-5",
