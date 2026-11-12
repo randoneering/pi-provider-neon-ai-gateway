@@ -26,10 +26,16 @@ describe("NEON_MODELS", () => {
 		expect(NEON_MODELS.find((model) => model.id === "kimi-k3-1-pro")).toMatchObject({
 			name: "Kimi K3.1 Pro", reasoning: true, input: ["text", "image"],
 			contextWindow: 1_048_576, maxTokens: 65_536,
-			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			cost: { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 0 },
 		});
 		expect(MODEL_CAPABILITIES["kimi-k3-1-pro"]).toEqual({ temperature: true, toolCall: true });
 		expect(isKnownNeonModel("databricks-kimi-k3-1-pro")).toBe(true);
+	});
+
+	it("estimates Kimi K3.1 Pro usage with published token rates", () => {
+		const model = NEON_MODELS.find((entry) => entry.id === "kimi-k3-1-pro")!;
+		const usage: Usage = { input: 1_000_000, output: 1_000_000, cacheRead: 1_000_000, cacheWrite: 0, totalTokens: 3_000_000, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
+		expect(calculateCost(model, usage)).toEqual({ input: 2, output: 10, cacheRead: 0.2, cacheWrite: 0, total: 12.2 });
 	});
 
 	it("registers Gemini 4 Argon with its published limits, prices, and sampling support", () => {
